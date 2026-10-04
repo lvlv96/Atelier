@@ -276,6 +276,15 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 .card .tick svg{width:15px;height:15px}
 .card.picked .tick{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .card.picked .pic{outline:2px solid var(--accent);outline-offset:-2px}
+.photo-acts{display:flex;gap:8px;margin-top:-6px}
+.photo-acts .btn{flex:1;height:38px;font-size:13.5px}
+.gridbar.sel{flex-direction:column;align-items:stretch;gap:8px;padding:6px 0 8px}
+.selrow{display:flex;align-items:center;gap:10px}
+.selrow span{flex:1;text-align:center}
+.selacts{display:flex;gap:8px}
+.selacts .btn{flex:1;height:40px}
+.toast.undo{display:flex;align-items:center;gap:16px;padding:8px 8px 8px 16px}
+.toast.undo button{background:none;border:0;color:var(--accent-soft);font-weight:700;font-size:14px;padding:6px 10px;text-decoration:underline;text-underline-offset:3px}
 .auth{position:fixed;inset:0;z-index:50;background:var(--ground);display:grid;place-items:center;padding:calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto}
 .auth-card{width:100%;max-width:380px;display:grid;gap:14px}
 .auth-brand{font:500 40px/1 var(--display);margin-bottom:4px}
@@ -500,7 +509,7 @@ const SB_URL='https://stnspztabuxfylcuskho.supabase.co';
 const SB_KEY='sb_publishable_x3U_3sfLDxhm6DF9OLcjTg_DsyrTnY5';
 const COLLS=['items','outfits','days'];
 const Store = {
-  mode:'loading', canWrite:true, items:new Map(), outfits:new Map(), days:new Map(), urls:new Map(), onChange(){},
+  mode:'loading', canWrite:true, items:new Map(), outfits:new Map(), days:new Map(), urls:new Map(), hiding:new Set(), onChange(){},
   idb:null, uid:null, email:'', pending:0, lastSync:0, syncError:'', loadingImg:new Set(),
   openDb(name){
     return new Promise((res,rej)=>{
@@ -622,6 +631,7 @@ const Sync = {
         if(error) throw error;
         for(const r of data){
           if(r.updated_at>max) max=r.updated_at;
+          if(Store.hiding.has(r.id)) continue;   // being deleted, waiting for the undo window to close
           if(await Store._get('outbox',coll+':'+r.id)) continue;   // a local change is waiting to go up; it wins
           const map=Store[coll];
           if(r.deleted){ if(map.has(r.id)){ await Store._del(coll,r.id); map.delete(r.id); changed=true } continue }
@@ -1021,8 +1031,9 @@ function renderWardrobe(){
   S.visibleIds=list.map(i=>i.id);
   const selN=S.selected.size;
   const bar=Store.canWrite?(S.selecting
-    ?`<div class="gridbar sel"><button type="button" class="link" data-act="sel-cancel">Cancel</button><span>${selN} selected</span><button type="button" class="link" data-act="sel-all">${selN===list.length?'Select none':'Select all'}</button><button type="button" class="btn danger" data-act="sel-delete" ${selN?'':'disabled'}>Delete</button></div>`
-    :`<div class="gridbar"><span>${list.length} ${list.length===1?'piece':'pieces'}</span><button type="button" class="link" data-act="sel-start">Select</button></div>`):'';
+    ?`<div class="gridbar sel"><div class="selrow"><button type="button" class="link" data-act="sel-cancel">Cancel</button><span>${selN?`${selN} selected`:'Tap pieces to select them'}</span><button type="button" class="link" data-act="sel-all">${selN&&selN===list.length?'Select none':'Select all'}</button></div>
+        <div class="selacts"><button type="button" class="btn" data-act="sel-tag" ${selN?'':'disabled'}>Tag</button><button type="button" class="btn danger" data-act="sel-delete" ${selN?'':'disabled'}>Delete</button></div></div>`
+    :`<div class="gridbar"><span>${list.length} ${list.length===1?'piece':'pieces'}${S.cat===''&&list.length>1?' · select several to tag them at once':''}</span><button type="button" class="link" data-act="sel-start">Select</button></div>`):'';
   body.innerHTML=bar+`<div class="grid${S.layout==='grid3'?' dense':''}${S.selecting?' selecting':''}">${list.map(i=>`<button class="card${S.selected.has(i.id)?' picked':''}" data-item="${i.id}" ${S.selecting?`aria-pressed="${S.selected.has(i.id)}"`:''}>
       <div class="pic">${i.img?`<img src="${esc(Store.imgUrl(i.img))}" alt="" loading="lazy" decoding="async">`:''}
         ${!i.cat?'<span class="badge todo">To tag</span>':i.example?'<span class="badge">Example</span>':''}${i.fav?'<span class="fav">♥</span>':''}${S.selecting?'<span class="tick" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 12 4 4 8-8"/></svg></span>':''}</div>
@@ -1133,9 +1144,9 @@ function applyToForm(sheet,t){
   set('c',t.colours); set('s',t.seasons); set('o',t.occasions);
 }
 
-async function openAdd(file,status){
-  const wish=status==='wish';
-  const sheet=openSheet(wish?'Wish list piece':'New piece',`
+async function openAdd(file,status,opts={}){
+  const wish=status==='wish', edit=opts.edit||null;
+  const sheet=openSheet(edit?'Change photo':wish?'Wish list piece':'New piece',`
     <div class="pane" id="step1">
       <div class="steps">Step 1 of 2 · Clean up the photo</div>
       <div class="seg four" id="add-mode" role="group" aria-label="Background">
@@ -1163,7 +1174,7 @@ async function openAdd(file,status){
     ()=>{ if(Add.url) URL.revokeObjectURL(Add.url); Add.base=Add.out=Add.url=null });
   const stage=$('#add-stage',sheet), hint=t=>$('#add-hint',sheet).textContent=t;
   const back=$('#add-back',sheet), next=$('#add-next',sheet), title=$('.sheet-head h3',sheet), body=$('.sheet-body',sheet);
-  Add.mode=wish?'crop':(pref.cleanup==='none'?'none':'auto'); Add.pts=[]; Add.rect=null; Add.done={draw:false,crop:false}; Add.step=1; Add.status=wish?'wish':'';
+  Add.mode=edit?(opts.adjust?'none':(pref.cleanup==='none'?'none':'auto')):wish?'crop':(pref.cleanup==='none'?'none':'auto'); Add.pts=[]; Add.rect=null; Add.done={draw:false,crop:false}; Add.step=1; Add.status=wish?'wish':'';
   try{ Add.base=await fileToCanvas(file,wish?1400:1000) }catch(e){ toast(e.message||'That photo could not be opened.'); closeSheet(); return }
   if(!sheet.isConnected) return;
 
@@ -1309,7 +1320,20 @@ async function openAdd(file,status){
   $('#add-refine',sheet).onchange=run;
   $('#add-redraw',sheet).onclick=()=>{ if(Add.mode==='crop') Add.rect=null; else Add.pts=[]; Add.done[Add.mode]=false; run() };
   back.onclick=()=>{ if(Add.step===2) goStep(1); else closeSheet() };
+  if(edit){ next.textContent='Use this photo'; $('.steps',sheet).textContent=opts.adjust?'Adjust the photo':'Clean up the new photo' }
+  if(edit) back.onclick=()=>{ closeSheet(); const cur=Store.items.get(edit.id); if(cur) openEdit(cur) };
   next.onclick=async()=>{
+    if(edit){
+      next.disabled=true; next.textContent='Saving…';
+      try{
+        const cur=Store.items.get(edit.id)||edit, old=cur.img;
+        const ref=await Store.addImage(await exportCutout(Add.out||Add.base));
+        await Store.putItem({...cur,img:ref});
+        if(old && old!==ref) await Store.dropImage(old);
+        closeSheet(); toast('Photo updated'); openEdit(Store.items.get(edit.id));
+      }catch(err){ next.disabled=false; next.textContent='Use this photo'; toast(saveError(err)) }
+      return;
+    }
     if(Add.step===1){ goStep(2); return }
     next.disabled=true; next.textContent='Saving…';
     try{
@@ -1367,22 +1391,99 @@ async function addBatch(files,status){
   toast(failed?`${n-failed} added, ${failed} could not be read`:`${n} pieces added — tap each to tag it`,3600);
 }
 
-async function deleteSelected(){
-  const ids=[...S.selected]; if(!ids.length) return;
-  if(!await confirmBox(`Delete ${ids.length} ${ids.length===1?'piece':'pieces'}? They will also disappear from any outfits.`)) return;
-  const t=toast(`Deleting ${ids.length}…`,0); let failed=0;
-  for(const id of ids){ try{ await Store.delItem(id) }catch(e){ failed++ } }
-  t.remove(); S.selecting=false; S.selected.clear(); render();
-  toast(failed?`${ids.length-failed} deleted, ${failed} could not be deleted`:`${ids.length} ${ids.length===1?'piece':'pieces'} deleted`);
+function openBulkTag(){
+  const ids=[...S.selected].filter(id=>Store.items.has(id)); if(!ids.length) return;
+  let cat='', sub='';
+  const sheet=openSheet(`Tag ${ids.length} ${ids.length===1?'piece':'pieces'}`,`
+    <p class="note" style="margin:0">Pick what to set. Anything you leave untouched stays as it is on each piece.</p>
+    <div class="field"><span class="label">Category</span><div class="catgrid" id="bt-cats">${CATS.map(c=>`<button type="button" class="chip" data-btc="${c.id}" aria-pressed="false">${esc(c.label)}</button>`).join('')}</div></div>
+    <div class="field" id="bt-sub-wrap" hidden><span class="label">Type</span><div class="wrapchips" id="bt-subs"></div></div>
+    <div class="field"><span class="label">Add season</span><div class="wrapchips" id="bt-seasons">${chipBtns(SEASONS,[],'s')}</div></div>
+    <div class="field"><span class="label">Add occasion</span><div class="wrapchips" id="bt-occ">${chipBtns(OCCASIONS,[],'o')}</div></div>
+    <div class="field"><span class="label">Add colour</span><div class="swatches" id="bt-col">${swatchBtns([],'c')}</div></div>`,
+    `<button class="btn ghost" data-close2>Cancel</button><button class="btn primary" id="bt-go">Apply to ${ids.length}</button>`);
+  const paint=()=>{
+    $$('[data-btc]',sheet).forEach(b=>b.setAttribute('aria-pressed',b.dataset.btc===cat));
+    const c=catById(cat); $('#bt-sub-wrap',sheet).hidden=!c;
+    $('#bt-subs',sheet).innerHTML=c?c.subs.map(x=>`<button type="button" class="chip" data-bts="${esc(x)}" aria-pressed="${x===sub}">${esc(x)}</button>`).join(''):'';
+  };
+  $('#bt-cats',sheet).onclick=e=>{const b=e.target.closest('[data-btc]'); if(!b) return; cat=cat===b.dataset.btc?'':b.dataset.btc; sub=''; paint()};
+  $('#bt-subs',sheet).onclick=e=>{const b=e.target.closest('[data-bts]'); if(!b) return; sub=sub===b.dataset.bts?'':b.dataset.bts; paint()};
+  toggleOnClick($('#bt-seasons',sheet),'[data-s]'); toggleOnClick($('#bt-occ',sheet),'[data-o]'); toggleOnClick($('#bt-col',sheet),'[data-c]');
+  $('[data-close2]',sheet).onclick=closeSheet;
+  $('#bt-go',sheet).onclick=async e=>{
+    const seasons=pressed(sheet,'s'), occ=pressed(sheet,'o'), cols=pressed(sheet,'c');
+    if(!cat && !seasons.length && !occ.length && !cols.length){ toast('Choose a category or something to add first'); return }
+    e.target.disabled=true; let n=0;
+    for(const id of ids){
+      const it=Store.items.get(id); if(!it) continue;
+      const up={...it};
+      if(cat){ up.sub=(cat===it.cat&&!sub)?it.sub:sub; up.cat=cat }
+      if(seasons.length) up.seasons=[...new Set([...(it.seasons||[]),...seasons])];
+      if(occ.length) up.occasions=[...new Set([...(it.occasions||[]),...occ])];
+      if(cols.length) up.colours=[...new Set([...(it.colours||[]),...cols])].slice(0,4);
+      try{ await Store.putItem(up); n++ }catch(err){}
+    }
+    closeSheet(); S.selecting=false; S.selected.clear(); render();
+    toast(`${n} ${n===1?'piece':'pieces'} updated`);
+  };
+  paint();
 }
+async function deleteSelected(){
+  const objs=[...S.selected].map(id=>Store.items.get(id)).filter(Boolean); if(!objs.length) return;
+  S.selecting=false; S.selected.clear();
+  softDelete('items',objs,`${objs.length} ${objs.length===1?'piece':'pieces'} deleted`);
+}
+/* Delete straight away, with a few seconds to undo. The real delete happens when the undo window closes. */
+const Undo={pending:null};
+async function commitPending(){
+  const p=Undo.pending; if(!p) return;
+  Undo.pending=null; clearTimeout(p.timer); p.el?.remove();
+  try{ await p.commit() }catch(e){ toast('Some items could not be deleted. Try again.') }
+  p.objs.forEach(o=>Store.hiding.delete(o.id));
+}
+function softDelete(coll,objs,label){
+  commitPending();
+  objs.forEach(o=>{ Store[coll].delete(o.id); Store.hiding.add(o.id) });
+  render(); if(Builder.open) Builder.renderTray();
+  $('.toast')?.remove(); clearTimeout(toastTimer);
+  const el=document.createElement('div'); el.className='toast undo'; el.setAttribute('role','status');
+  el.innerHTML=`<span>${esc(label)}</span><button type="button">Undo</button>`;
+  document.body.appendChild(el);
+  const p={objs,el,commit:async()=>{
+    for(const o of objs){
+      Store[coll].set(o.id,o);
+      if(coll==='items') await Store.delItem(o.id); else if(coll==='outfits') await Store.delOutfit(o.id); else await Store.delDay(o.id);
+    }
+  }};
+  p.timer=setTimeout(commitPending,7000);
+  el.querySelector('button').onclick=()=>{
+    if(Undo.pending!==p) return;
+    clearTimeout(p.timer); Undo.pending=null; el.remove();
+    objs.forEach(o=>{ Store[coll].set(o.id,o); Store.hiding.delete(o.id) });
+    render(); toast('Restored');
+  };
+  Undo.pending=p;
+}
+document.addEventListener('visibilitychange',()=>{ if(document.hidden) commitPending() });
 function openEdit(it){
   const sheet=openSheet(it.cat?'Edit piece':'Tag this piece',formHTML(it,Store.imgUrl(it.img),!it.cat&&S.sampleImages),
     `<button class="btn ghost" data-close2>Cancel</button><button class="btn primary" id="edit-save">Save changes</button>`);
   $('.sheet-body',sheet).insertAdjacentHTML('beforeend','<button type="button" class="btn danger ghost" id="edit-del">Delete this piece</button>');
-  $('#edit-del',sheet).onclick=async()=>{
-    if(!await confirmBox(`Delete “${itemLabel(it)}”? It will also disappear from any outfits.`)) return;
-    try{ await Store.delItem(it.id); closeSheet(); toast('Piece deleted') }catch(e){ toast('The piece was not deleted. Try again.') }
+  $('.dhead',sheet)?.insertAdjacentHTML('afterend',`<div class="photo-acts"><button type="button" class="btn" id="ph-adjust">Adjust photo</button><button type="button" class="btn" id="ph-new">New photo</button></div>`);
+  $('#ph-adjust',sheet).onclick=async()=>{
+    try{ const blob=await (await fetch(Store.imgUrl(it.img))).blob(); openAdd(new File([blob],'photo.png',{type:blob.type||'image/png'}),isWish(it)?'wish':'owned',{edit:it,adjust:true}) }
+    catch(e){ toast('The photo isn’t available right now. Try again in a moment.') }
   };
+  $('#ph-new',sheet).onclick=()=>{
+    const s2=openSheet('New photo',`<button class="btn primary" data-ph="camera">Take a photo</button><button class="btn" data-ph="library">Choose from photos</button>
+      <p class="note" style="margin:0">The new photo replaces the old one. Name, tags and outfits stay as they are.</p>`,
+      `<button class="btn ghost" data-ph="back">Back</button>`);
+    s2.addEventListener('click',e=>{ const a=e.target.closest('[data-ph]')?.dataset.ph; if(!a) return;
+      if(a==='back'){ closeSheet(); openEdit(Store.items.get(it.id)||it); return }
+      S.photoTarget=it.id; closeSheet(); $(a==='camera'?'#in-camera':'#in-library').click() });
+  };
+  $('#edit-del',sheet).onclick=()=>{ closeSheet(); const cur=Store.items.get(it.id); if(cur) softDelete('items',[cur],`“${itemLabel(cur)}” deleted`) };
   wireForm(sheet,it);
   $('#add-suggest',sheet)?.addEventListener('click',()=>suggestTags(sheet,()=>fetch(Store.imgUrl(it.img)).then(r=>r.blob())));
   $('[data-close2]',sheet).onclick=closeSheet;
@@ -1424,10 +1525,7 @@ function openItem(id){
   });
   $('#it-edit',sheet)?.addEventListener('click',()=>openEdit(it));
   $('#it-style',sheet)?.addEventListener('click',()=>{closeSheet(); Builder.start(null,[it.id])});
-  $('#it-del',sheet)?.addEventListener('click',async()=>{
-    if(!await confirmBox(`Delete “${itemLabel(it)}”? It will also disappear from any outfits.`)) return;
-    try{ await Store.delItem(id); closeSheet(); toast('Piece deleted') }catch(e){ toast('The piece was not deleted. Try again.') }
-  });
+  $('#it-del',sheet)?.addEventListener('click',()=>{ closeSheet(); const cur=Store.items.get(id); if(cur) softDelete('items',[cur],`“${itemLabel(cur)}” deleted`) });
 }
 
 /* ---------- outfit builder ---------- */
@@ -1585,6 +1683,41 @@ const Builder = {
   },
 };
 
+function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src }) }
+async function pieceImage(it){
+  let url=Store.imgUrl(it.img);
+  if(!url && Store.getBlob){ const b=await Store.getBlob(it.img.slice(2)) || await Sync.fetchPhoto(it.img.slice(2)); if(b) url=URL.createObjectURL(b) }
+  return url?loadImg(url):null;
+}
+async function shareLook(pieces,{bg,name}){
+  const t=toast('Preparing the picture…',0);
+  try{
+    const W=1080,H=1440,c=document.createElement('canvas'); c.width=W; c.height=H; const g=c.getContext('2d');
+    const back=okBg(bg)||'#FFFFFF'; g.fillStyle=back; g.fillRect(0,0,W,H);
+    for(const p of pieces){
+      const it=Store.items.get(p.item); if(!it) continue;
+      const img=await pieceImage(it).catch(()=>null); if(!img) continue;
+      const w=p.w*W, h=w*img.naturalHeight/img.naturalWidth;
+      g.save(); g.shadowColor='rgba(0,0,0,.16)'; g.shadowBlur=28; g.shadowOffsetY=12;
+      g.drawImage(img,p.x*W,p.y*H,w,h); g.restore();
+    }
+    const n=parseInt(back.slice(1),16), lum=(0.299*(n>>16&255)+0.587*(n>>8&255)+0.114*(n&255))/255;
+    g.fillStyle=lum>0.55?'rgba(36,27,40,.85)':'rgba(255,255,255,.9)';
+    try{ await document.fonts?.load('italic 500 34px "Bodoni Moda"') }catch(e){}
+    g.font='500 40px "Bodoni Moda", Didot, Georgia, serif'; g.textBaseline='alphabetic';
+    if(name) g.fillText(name,60,H-64);
+    g.font='italic 500 30px "Bodoni Moda", Didot, Georgia, serif'; g.textAlign='right'; g.fillText('VL Atelier',W-60,H-66);
+    const blob=await canvasBlob(c,'image/png');
+    const file=new File([blob],`${(name||'outfit').replace(/[^\w\- ]+/g,'').trim().replace(/\s+/g,'-').toLowerCase()||'outfit'}.png`,{type:'image/png'});
+    t.remove();
+    if(navigator.canShare?.({files:[file]})){
+      try{ await navigator.share({files:[file],title:name||'Outfit'}) }catch(e){ if(e?.name!=='AbortError') throw e }
+    } else {
+      const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=file.name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
+      toast('Picture saved');
+    }
+  }catch(e){ t.remove(); toast('The picture couldn’t be made. Try again.') }
+}
 function openOutfit(id){
   const o=Store.outfits.get(id); if(!o) return;
   const sheet=openSheet(o.name||'Untitled outfit',`<div class="board" style="max-height:52vh;margin:0 auto;height:52vh;aspect-ratio:3/4;${okBg(o.bg)?'background:'+okBg(o.bg):''}">${boardHTML(o.pieces)}</div>
@@ -1593,7 +1726,8 @@ function openOutfit(id){
       <p class="note" style="margin:-8px 0 0">Pick a date to put this outfit in the planner.</p>`:''}
     <div class="field"><span class="label">Occasion</span><div class="wrapchips" id="o-occ">${chipBtns(OCCASIONS,[o.occasion||''],'oc')}</div></div>
     ${Store.canWrite?`<button class="btn danger ghost" id="o-del">Delete outfit</button>`:''}`,
-    Store.canWrite?`<button class="btn" id="o-dup">Duplicate</button><button class="btn primary" id="o-edit">Edit board</button>`:'');
+    Store.canWrite?`<button class="btn" id="o-share">Share</button><button class="btn" id="o-dup">Duplicate</button><button class="btn primary" id="o-edit">Edit</button>`:`<button class="btn primary" id="o-share">Share</button>`);
+  $('#o-share',sheet)?.addEventListener('click',()=>{ const cur=Store.outfits.get(id); if(cur) shareLook(cur.pieces,{bg:cur.bg,name:cur.name}) });
   $('#o-occ',sheet).addEventListener('click',async e=>{
     const b=e.target.closest('[data-oc]'); if(!b||!Store.canWrite) return;
     const v=o.occasion===b.dataset.oc?'':b.dataset.oc;
@@ -1605,10 +1739,7 @@ function openOutfit(id){
   $('#o-date',sheet)?.addEventListener('change',async e=>{ const k=e.target.value; if(!/^\d{4}-\d{2}-\d{2}$/.test(k)) return;
     try{ await setDay(k,{outfit:id,items:[]}); closeSheet(); toast(`Planned for ${fmtDay(k,{weekday:'short',day:'numeric',month:'short'})}`) }catch(err){ toast(saveError(err)) } });
   $('#o-dup',sheet)?.addEventListener('click',()=>{closeSheet(); const src=Store.outfits.get(id); Builder.start({...src,id:null,name:(src.name||'Outfit')+' (copy)'})});
-  $('#o-del',sheet)?.addEventListener('click',async()=>{
-    if(!await confirmBox(`Delete the outfit “${o.name||'Untitled outfit'}”? The pieces stay in the wardrobe.`)) return;
-    try{ await Store.delOutfit(id); closeSheet(); toast('Outfit deleted') }catch(e){ toast('The outfit was not deleted. Try again.') }
-  });
+  $('#o-del',sheet)?.addEventListener('click',()=>{ closeSheet(); const cur=Store.outfits.get(id); if(cur) softDelete('outfits',[cur],'Outfit deleted') });
 }
 
 /* ---------- dates, wear & money helpers ---------- */
@@ -1829,17 +1960,19 @@ function openDay(key){
   const outs=[...Store.outfits.values()].sort((a,b)=>(b.updatedAt||0)-(a.updatedAt||0));
   const sheet=openSheet(fmtDay(key),`
     ${pcs.length?`<div class="board" style="max-height:40vh;height:40vh;margin:0 auto;aspect-ratio:3/4;${bg?'background:'+bg:''}">${boardHTML(pcs)}</div>
-      <p class="note" style="margin:0;text-align:center">${key<=t?'Worn':'Planned'} · ${pcs.length} ${pcs.length===1?'piece':'pieces'}</p>`
+      <p class="note" style="margin:0;text-align:center">${key<=t?'Worn':'Planned'} · ${pcs.length} ${pcs.length===1?'piece':'pieces'}</p>
+      <button type="button" class="btn" id="d-share">Share this look</button>`
       :`<p style="margin:0">${key<t?'Nothing logged for this day.':'Nothing planned yet.'}</p>`}
     ${Store.canWrite?`<button type="button" class="btn primary" id="d-dress">Dress me for this day</button>
     ${outs.length?`<div class="field"><span class="label">Or choose a saved outfit</span><div class="ogrid">${outs.map(o=>`<button type="button" class="ocard" data-pick="${o.id}"><div class="board"${okBg(o.bg)?` style="background:${okBg(o.bg)}"`:''}>${boardHTML(o.pieces)}</div><b>${esc(o.name||'Untitled outfit')}</b></button>`).join('')}</div></div>`:''}`:''}`,
     Store.canWrite&&d?`<button class="btn danger" id="d-clear">${key<=t?'Remove log':'Remove plan'}</button>`:'');
+  $('#d-share',sheet)?.addEventListener('click',()=>{ const o=d?.outfit&&Store.outfits.get(d.outfit); shareLook(pcs,{bg,name:o?.name||fmtDay(key,{weekday:'long',day:'numeric',month:'long'})}) });
   $('#d-dress',sheet)?.addEventListener('click',()=>{ closeSheet(); DM.target=key; S.view='dress'; render() });
   sheet.addEventListener('click',async e=>{
     const p=e.target.closest('[data-pick]'); if(!p) return;
     try{ await setDay(key,{outfit:p.dataset.pick,items:[]}); closeSheet(); toast(key<=t?'Logged':'Planned') }catch(err){ toast(saveError(err)) }
   });
-  $('#d-clear',sheet)?.addEventListener('click',async()=>{ try{ await Store.delDay(key); closeSheet(); toast('Removed') }catch(e){ toast('Could not remove it. Try again.') } });
+  $('#d-clear',sheet)?.addEventListener('click',()=>{ closeSheet(); const cur=Store.days.get(key); if(cur) softDelete('days',[cur],key<=t?'Log removed':'Plan removed') });
 }
 
 /* ---------- backup & restore (one JSON file with photos inside) ---------- */
@@ -2043,6 +2176,7 @@ function act(a){
   if(a==='sel-cancel'){ S.selecting=false; S.selected.clear(); renderWardrobe() }
   if(a==='sel-all'){ if(S.selected.size===S.visibleIds.length) S.selected.clear(); else S.visibleIds.forEach(id=>S.selected.add(id)); renderWardrobe() }
   if(a==='sel-delete') deleteSelected();
+  if(a==='sel-tag') openBulkTag();
   if(a==='clear'){S.cat='all';S.sub=null;S.q='';$('#q').value='';S.colours.clear();S.seasons.clear();S.occasions.clear();renderFilters();render()}
 }
 $('#main').addEventListener('click',e=>{
@@ -2076,8 +2210,9 @@ $('#flt-clear').onclick=()=>{S.colours.clear();S.seasons.clear();S.occasions.cle
 $('#btn-settings').onclick=openSettings;
 $('#btn-new-outfit').onclick=()=>Builder.start(null);
 $('#btn-shuffle-outfit').onclick=()=>{Builder.start(null); if(!Builder.shuffle()) Builder.close()};
-$('#in-camera').onchange=e=>{const f=e.target.files[0]; e.target.value=''; if(f) openAdd(f,'owned')};
-$('#in-library').onchange=e=>{const fs=[...e.target.files]; e.target.value=''; if(fs.length===1) openAdd(fs[0],S.addStatus); else if(fs.length) addBatch(fs,S.addStatus)};
+function photoTargetFile(f){ const it=S.photoTarget&&Store.items.get(S.photoTarget); S.photoTarget=null; if(!it) return false; if(f) openAdd(f,isWish(it)?'wish':'owned',{edit:it}); return true }
+$('#in-camera').onchange=e=>{const f=e.target.files[0]; e.target.value=''; if(photoTargetFile(f)) return; if(f) openAdd(f,'owned')};
+$('#in-library').onchange=e=>{const fs=[...e.target.files]; e.target.value=''; if(photoTargetFile(fs[0])) return; if(fs.length===1) openAdd(fs[0],S.addStatus); else if(fs.length) addBatch(fs,S.addStatus)};
 document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('.confirm')) return; if(layer.firstElementChild) closeSheet(); else if(Builder.open) Builder.close() } });
 
 $('#dm-seasons').innerHTML=[['','Any season'],...SEASONS].map(([v,l])=>`<button type="button" class="chip" data-dmseason="${v}">${l}</button>`).join('');
