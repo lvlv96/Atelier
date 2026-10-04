@@ -242,6 +242,15 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 .sname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
 .sval{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
 .sval small{font-weight:400;color:var(--muted);font-size:11px}
+.auth{position:fixed;inset:0;z-index:50;background:var(--ground);display:grid;place-items:center;padding:calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto}
+.auth-card{width:100%;max-width:380px;display:grid;gap:14px}
+.auth-brand{font:500 40px/1 var(--display);margin-bottom:4px}
+.auth-brand em{font-style:italic;color:var(--accent)}
+.auth-card h2{margin:0;font:500 22px/1.2 var(--display);color:var(--muted)}
+.auth-card .field input{background:var(--surface)}
+.auth-msg{margin:0;color:var(--danger);font-size:14px}
+#auth-switch{justify-self:center;font-weight:400;color:var(--muted)}
+#auth-switch b{color:var(--accent);font-weight:600}
 /* item detail */
 .detail-pic{aspect-ratio:1;max-width:100%;border-radius:var(--r);background:var(--tile);display:grid;place-items:center}
 .detail-pic img{max-width:84%;max-height:84%;object-fit:contain;filter:drop-shadow(0 10px 16px var(--shadow))}
@@ -385,7 +394,20 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 <input type="file" id="in-library" accept="image/*" multiple hidden>
 <input type="file" id="in-restore" accept="application/json,.json" hidden>
 <div id="layer"></div>
+<div class="auth" id="auth" hidden>
+  <form class="auth-card" id="auth-form" novalidate>
+    <div class="auth-brand">The <em>Atelier</em></div>
+    <h2 id="auth-title">Welcome back</h2>
+    <div class="field"><label class="label" for="auth-email">Email</label><input id="auth-email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required></div>
+    <div class="field"><label class="label" for="auth-pass">Password</label><input id="auth-pass" type="password" autocomplete="current-password" required minlength="6"></div>
+    <p class="note" id="auth-hint" hidden style="margin:0">At least 6 characters. Use the same email and password on every device to see the same wardrobe.</p>
+    <p class="auth-msg" id="auth-msg" role="alert" hidden></p>
+    <button class="btn primary" id="auth-go" type="submit">Sign in</button>
+    <button class="link" id="auth-switch" type="button"></button>
+  </form>
+</div>
 
+<script src="vendor/supabase.js"></script>
 <script>
 /* ---------- reference data ---------- */
 const CATS = [
@@ -422,111 +444,242 @@ const esc = s => String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>
 const uid = () => Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 const clamp = (v,a,b)=>Math.min(b,Math.max(a,v));
 
-/* ---------- storage: synced (db + assets) or this device (IndexedDB) ---------- */
+/* ---------- storage: a copy on this device (IndexedDB, one per account) kept in sync with Supabase ---------- */
+const SB_URL='https://stnspztabuxfylcuskho.supabase.co';
+const SB_KEY='sb_publishable_x3U_3sfLDxhm6DF9OLcjTg_DsyrTnY5';
+const COLLS=['items','outfits','days'];
 const Store = {
   mode:'loading', canWrite:true, items:new Map(), outfits:new Map(), days:new Map(), urls:new Map(), onChange(){},
-  db:null, assets:null, idb:null,
-  async init(){
-    let db=null, assets=null;
+  idb:null, uid:null, email:'', pending:0, lastSync:0, syncError:'', loadingImg:new Set(),
+  openDb(name){
+    return new Promise((res,rej)=>{
+      const r=indexedDB.open(name,1);
+      r.onupgradeneeded=()=>{const d=r.result;['items','outfits','days','blobs','outbox'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n,{keyPath:n==='blobs'?'key':n==='outbox'?'k':'id'}))};
+      r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
+    });
+  },
+  async start(uid,email){
+    this.uid=uid; this.email=email||'';
     try{
       if(navigator.storage?.persist) await navigator.storage.persist().catch(()=>false);
-    }catch(e){}
-    if(db){
-      this.mode='cloud'; this.db=db; this.assets=assets; this.canWrite=!!assets;
-      await new Promise(res=>{
-        let pending=3; const done=()=>{if(--pending===0)res()};
-        const sub=(name)=>{ let first=true;
-          db.collection(name).onSnapshot(s=>{
-            this[name]=new Map(s.docs.map(d=>[d.id,{...d.data(),id:d.id}]));
-            if(first){first=false;done()} else this.onChange();
-          }, e=>{ if(name==='items') toast('Could not load pieces. Reopen the page to try again.'); if(first){first=false;done()} });
-        };
-        sub('items'); sub('outfits'); sub('days');
-      });
-    } else {
-      this.mode='local';
-      try{
-        this.idb = await new Promise((res,rej)=>{
-          const r=indexedDB.open('atelier',2);
-          r.onupgradeneeded=()=>{const d=r.result;['items','outfits','blobs','days'].forEach(n=>d.objectStoreNames.contains(n)||d.createObjectStore(n,{keyPath:n==='blobs'?'key':'id'}))};
-          r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error);
-        });
-        const [items,outfits,days] = await Promise.all([this._all('items'),this._all('outfits'),this._all('days')]);
-        this.items=new Map(items.map(i=>[i.id,i])); this.outfits=new Map(outfits.map(o=>[o.id,o])); this.days=new Map(days.map(d=>[d.id,d]));
-      }catch(e){ this.mode='memory'; }
-    }
+      this.idb=await this.openDb('atelier-u-'+uid);
+      const [items,outfits,days,outbox]=await Promise.all(COLLS.map(c=>this._all(c)).concat([this._all('outbox')]));
+      this.items=new Map(items.map(i=>[i.id,i])); this.outfits=new Map(outfits.map(o=>[o.id,o])); this.days=new Map(days.map(d=>[d.id,d]));
+      this.pending=outbox.length; this.mode='local';
+    }catch(e){ this.mode='memory' }
   },
   _tx(store,mode){return this.idb.transaction(store,mode).objectStore(store)},
   _all(store){return new Promise((res,rej)=>{const r=this._tx(store,'readonly').getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>rej(r.error)})},
-  _put(store,v){return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').put(v);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
-  _del(store,k){return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').delete(k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
-  _get(store,k){return new Promise((res,rej)=>{const r=this._tx(store,'readonly').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})},
-
+  _put(store,v){ if(!this.idb) return Promise.resolve(); return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').put(v);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
+  _del(store,k){ if(!this.idb) return Promise.resolve(); return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').delete(k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
+  _get(store,k){ if(!this.idb) return Promise.resolve(undefined); return new Promise((res,rej)=>{const r=this._tx(store,'readonly').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})},
+  async enqueue(coll,id,op){
+    await this._put('outbox',{k:coll+':'+id,coll,id,op,at:Date.now()+Math.random()});
+    this.pending=(await this._all('outbox')).length; Sync.soon();
+  },
   async addImage(blob){
-    if(this.mode==='cloud'){
-      const r = await this.assets.upload(blob);
-      this.urls.set('a:'+r.id, r.url);
-      return 'a:'+r.id;
-    }
     const key=uid();
-    if(this.mode==='local') await this._put('blobs',{key,blob});
+    await this._put('blobs',{key,blob});
     this.urls.set('l:'+key, URL.createObjectURL(blob));
+    await this.enqueue('blobs',key,'put');
     return 'l:'+key;
   },
   imgUrl(ref){
     if(!ref) return '';
-    if(this.urls.has(ref)) return this.urls.get(ref);
-    if(ref.startsWith('a:')){const u='/_blob/'+ref.slice(2); this.urls.set(ref,u); return u}
-    if(ref.startsWith('l:') && this.mode==='local'){
-      this.urls.set(ref,'');
-      this._get('blobs',ref.slice(2)).then(r=>{ if(r){this.urls.set(ref,URL.createObjectURL(r.blob)); this.onChange()} });
+    if(this.urls.get(ref)) return this.urls.get(ref);
+    if(ref.startsWith('l:') && !this.loadingImg.has(ref)){
+      this.loadingImg.add(ref); const key=ref.slice(2);
+      this._get('blobs',key).then(async r=>{
+        let blob=r?.blob;
+        if(!blob) blob=await Sync.fetchPhoto(key);
+        if(blob){ this.urls.set(ref,URL.createObjectURL(blob)); this.onChange() }
+      }).catch(()=>{}).finally(()=>this.loadingImg.delete(ref));
     }
-    return this.urls.get(ref)||'';
+    return '';
   },
   async dropImage(ref){
-    try{
-      if(ref?.startsWith('a:') && this.assets) await this.assets.delete(ref.slice(2));
-      if(ref?.startsWith('l:') && this.mode==='local') await this._del('blobs',ref.slice(2));
-    }catch(e){}
+    if(!ref?.startsWith('l:')) return;
+    const key=ref.slice(2);
+    await this._del('blobs',key).catch(()=>{});
+    await this.enqueue('blobs',key,'del');
   },
-  async putItem(it){
-    const clean = JSON.parse(JSON.stringify(it));
-    if(this.mode==='cloud'){ const {id,...body}=clean; await this.db.collection('items').doc(id).set(body); this.items.set(id,clean) }
-    else { if(this.mode==='local') await this._put('items',clean); this.items.set(clean.id,clean) }
-    this.onChange();
+  async _save(coll,obj){
+    const clean=JSON.parse(JSON.stringify({...obj,updatedAt:Date.now()}));
+    await this._put(coll,clean); this[coll].set(clean.id,clean);
+    await this.enqueue(coll,clean.id,'put'); this.onChange();
   },
-  async delItem(id){
-    const it=this.items.get(id);
-    if(this.mode==='cloud') await this.db.collection('items').doc(id).delete();
-    else if(this.mode==='local') await this._del('items',id);
-    this.items.delete(id);
-    if(it) await this.dropImage(it.img);
-    this.onChange();
+  async _remove(coll,id){
+    await this._del(coll,id); this[coll].delete(id);
+    await this.enqueue(coll,id,'del'); this.onChange();
   },
-  async putOutfit(o){
-    const clean = JSON.parse(JSON.stringify(o));
-    if(this.mode==='cloud'){ const {id,...body}=clean; await this.db.collection('outfits').doc(id).set(body); this.outfits.set(id,clean) }
-    else { if(this.mode==='local') await this._put('outfits',clean); this.outfits.set(clean.id,clean) }
-    this.onChange();
-  },
-  async delOutfit(id){
-    if(this.mode==='cloud') await this.db.collection('outfits').doc(id).delete();
-    else if(this.mode==='local') await this._del('outfits',id);
-    this.outfits.delete(id); this.onChange();
-  },
-  async putDay(d){
-    const clean=JSON.parse(JSON.stringify(d));
-    if(this.mode==='cloud'){ const {id,...body}=clean; await this.db.collection('days').doc(id).set(body) }
-    else if(this.mode==='local') await this._put('days',clean);
-    this.days.set(clean.id,clean); this.onChange();
-  },
-  async delDay(id){
-    if(this.mode==='cloud') await this.db.collection('days').doc(id).delete();
-    else if(this.mode==='local') await this._del('days',id);
-    this.days.delete(id); this.onChange();
-  },
+  putItem(it){return this._save('items',it)},
+  async delItem(id){ const it=this.items.get(id); await this._remove('items',id); if(it) await this.dropImage(it.img) },
+  putOutfit(o){return this._save('outfits',o)},
+  delOutfit(id){return this._remove('outfits',id)},
+  putDay(d){return this._save('days',d)},
+  delDay(id){return this._remove('days',id)},
   list(){return [...this.items.values()].sort((a,b)=>(b.createdAt||0)-(a.createdAt||0))},
 };
+
+const Sync = {
+  sb:null, timer:null, busy:false, again:false,
+  soon(ms=900){ clearTimeout(this.timer); this.timer=setTimeout(()=>this.run(),ms) },
+  async run(){
+    if(!this.sb||!Store.uid||Store.mode!=='local') return;
+    if(this.busy){ this.again=true; return }
+    this.busy=true;
+    try{ await this.push(); await this.pull(); Store.lastSync=Date.now(); Store.syncError='' }
+    catch(e){ Store.syncError=navigator.onLine?'Sync paused — retrying shortly':'Offline — changes will sync when you’re back online'; this.soon(30000) }
+    this.busy=false; renderSyncNote();
+    if(this.again){ this.again=false; this.soon(300) }
+  },
+  async push(){
+    const ops=(await Store._all('outbox')).sort((a,b)=>a.at-b.at);
+    for(const op of ops){
+      if(op.coll==='blobs'){
+        const path=`${Store.uid}/${op.id}`;
+        if(op.op==='put'){
+          const r=await Store._get('blobs',op.id);
+          if(r){ const {error}=await this.sb.storage.from('photos').upload(path,r.blob,{upsert:true,contentType:r.blob.type||'image/webp'}); if(error) throw error }
+        } else await this.sb.storage.from('photos').remove([path]);
+      } else {
+        let row;
+        if(op.op==='put'){
+          const local=await Store._get(op.coll,op.id);
+          if(!local){ await Store._del('outbox',op.k); continue }
+          row={id:op.id,data:local,deleted:false};
+        } else row={id:op.id,data:{},deleted:true};
+        const {error}=await this.sb.from(op.coll).upsert(row,{onConflict:'user_id,id'});
+        if(error) throw error;
+      }
+      const cur=await Store._get('outbox',op.k);
+      if(cur && cur.at===op.at) await Store._del('outbox',op.k);
+    }
+    Store.pending=(await Store._all('outbox')).length;
+  },
+  async pull(){
+    let changed=false;
+    for(const coll of COLLS){
+      const lk=`atelier.pull.${Store.uid}.${coll}`;
+      let since; try{ since=localStorage.getItem(lk) }catch(e){}
+      since=since||'1970-01-01T00:00:00+00:00';
+      let max=since, from=0;
+      for(;;){
+        const {data,error}=await this.sb.from(coll).select('id,data,deleted,updated_at').gt('updated_at',since).order('updated_at',{ascending:true}).range(from,from+499);
+        if(error) throw error;
+        for(const r of data){
+          if(r.updated_at>max) max=r.updated_at;
+          if(await Store._get('outbox',coll+':'+r.id)) continue;   // a local change is waiting to go up; it wins
+          const map=Store[coll];
+          if(r.deleted){ if(map.has(r.id)){ await Store._del(coll,r.id); map.delete(r.id); changed=true } continue }
+          const loc=map.get(r.id);
+          if(loc && (loc.updatedAt||0)>=(r.data?.updatedAt||0)) continue;
+          const obj={...r.data,id:r.id};
+          await Store._put(coll,obj); map.set(r.id,obj); changed=true;
+        }
+        if(data.length<500) break;
+        from+=500;
+      }
+      try{ localStorage.setItem(lk,max) }catch(e){}
+    }
+    if(changed) Store.onChange();
+  },
+  async fetchPhoto(key){
+    if(!this.sb||!Store.uid) return null;
+    try{
+      const {data,error}=await this.sb.storage.from('photos').download(`${Store.uid}/${key}`);
+      if(error||!data) return null;
+      await Store._put('blobs',{key,blob:data});
+      return data;
+    }catch(e){ return null }
+  },
+};
+
+function renderSyncNote(){
+  const note=$('#mode-note'); if(!note) return;
+  if(Store.mode==='memory'){ note.hidden=false; note.querySelector('span').textContent='This browser is blocking storage. Open the app from its Home Screen icon.'; return }
+  if(Store.syncError && Store.pending){ note.hidden=false; note.querySelector('span').textContent=`${Store.syncError} · ${Store.pending} ${Store.pending===1?'change':'changes'} waiting`; return }
+  note.hidden=true;
+}
+
+/* ---------- sign in ---------- */
+const Auth = {
+  mode:'signin',
+  show(msg=''){
+    const el=$('#auth'); el.hidden=false; $('.app').setAttribute('aria-hidden','true');
+    this.paint(); $('#auth-msg').textContent=msg; $('#auth-msg').hidden=!msg;
+    setTimeout(()=>$('#auth-email').focus(),50);
+  },
+  hide(){ $('#auth').hidden=true; $('.app').removeAttribute('aria-hidden') },
+  paint(){
+    const up=this.mode==='signup';
+    $('#auth-title').textContent=up?'Create your account':'Welcome back';
+    $('#auth-go').textContent=up?'Create account':'Sign in';
+    $('#auth-pass').setAttribute('autocomplete',up?'new-password':'current-password');
+    $('#auth-switch').innerHTML=up?'Already have an account? <b>Sign in</b>':'New here? <b>Create an account</b>';
+    $('#auth-hint').hidden=!up;
+  },
+  error(e){
+    const m=String(e?.message||e||'');
+    if(/invalid login/i.test(m)) return 'That email and password don’t match. Check both and try again.';
+    if(/already registered|already exists/i.test(m)) return 'There’s already an account with this email. Sign in instead.';
+    if(/password.*(6|characters|short)/i.test(m)) return 'Choose a password with at least 6 characters.';
+    if(/signups? (are )?(not allowed|disabled)/i.test(m)) return 'New accounts are closed. Ask whoever set up the app to open sign-ups.';
+    if(/email.*(invalid|valid)/i.test(m)) return 'That email address doesn’t look right.';
+    if(/not confirmed/i.test(m)) return 'This account is waiting for email confirmation, which is switched on in Supabase. Turn off “Confirm email” there, then try again.';
+    if(/fetch|network/i.test(m)) return 'No connection. Connect to the internet to sign in the first time.';
+    return 'Something went wrong: '+m;
+  },
+  async submit(e){
+    e.preventDefault();
+    const email=$('#auth-email').value.trim(), password=$('#auth-pass').value, btn=$('#auth-go'), msg=$('#auth-msg');
+    if(!Sync.sb){ msg.hidden=false; msg.textContent='No connection. Connect to the internet to sign in the first time.'; return }
+    btn.disabled=true; msg.hidden=true;
+    try{
+      const res=this.mode==='signup' ? await Sync.sb.auth.signUp({email,password}) : await Sync.sb.auth.signInWithPassword({email,password});
+      if(res.error) throw res.error;
+      if(!res.data.session){ throw new Error('Email not confirmed') }
+      $('#auth-pass').value='';
+      await enterApp(res.data.session.user);
+    }catch(err){ msg.hidden=false; msg.textContent=this.error(err) }
+    btn.disabled=false;
+  },
+};
+async function enterApp(user){
+  try{ localStorage.setItem('atelier.lastUser',JSON.stringify({id:user.id,email:user.email})) }catch(e){}
+  Store.urls.clear();
+  await Store.start(user.id,user.email);
+  Auth.hide(); render(); renderSyncNote();
+  await offerDeviceImport();
+  Sync.run();
+}
+/* Pieces added before sign-in lived in an on-device-only store; offer to bring them into the account once. */
+async function offerDeviceImport(){
+  try{
+    if(localStorage.getItem('atelier.imported')) return;
+    const old=await new Promise((res,rej)=>{const r=indexedDB.open('atelier'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error)});
+    if(!old.objectStoreNames.contains('items')){ old.close(); return }
+    const all=s=>new Promise(res=>{ if(!old.objectStoreNames.contains(s)) return res([]); const q=old.transaction(s,'readonly').objectStore(s).getAll(); q.onsuccess=()=>res(q.result||[]); q.onerror=()=>res([]) });
+    const items=await all('items');
+    if(!items.length){ old.close(); return }
+    const ok=await confirmBox(`There ${items.length===1?'is 1 piece':`are ${items.length} pieces`} saved on this device from before you signed in. Add ${items.length===1?'it':'them'} to your account?`,'Add them');
+    try{ localStorage.setItem('atelier.imported','1') }catch(e){}
+    if(!ok){ old.close(); return }
+    const t=toast('Adding pieces to your account…',0);
+    const [outfits,days,blobs]=await Promise.all([all('outfits'),all('days'),all('blobs')]);
+    for(const b of blobs){ await Store._put('blobs',b); await Store.enqueue('blobs',b.key,'put') }
+    for(const it of items){ await Store._save('items',it) }
+    for(const o of outfits){ await Store._save('outfits',o) }
+    for(const d of days){ await Store._save('days',d) }
+    old.close(); t.remove(); toast(`${items.length} pieces added — syncing now`);
+  }catch(e){}
+}
+async function signOut(){
+  if(Store.pending && !await confirmBox(`${Store.pending} ${Store.pending===1?'change hasn’t':'changes haven’t'} synced yet. Sign out anyway? They stay on this device and sync next time you sign in here.`,'Sign out')) return;
+  try{ localStorage.removeItem('atelier.lastUser') }catch(e){}
+  try{ await Sync.sb?.auth.signOut() }catch(e){}
+  location.reload();
+}
 
 /* ---------- image tools ---------- */
 async function fileToCanvas(file,max){
@@ -804,11 +957,7 @@ function render(){
   $('#main').classList.toggle('fixed',S.view==='dress');
   S.wear=wearStats();
   $$('.tab').forEach(t=>{ if(t.dataset.view===S.view) t.setAttribute('aria-current','page'); else t.removeAttribute('aria-current') });
-  const note=$('#mode-note');
-  const lastB=(()=>{try{return +localStorage.getItem('atelier.backup')||0}catch(e){return 0}})();
-  if(Store.mode==='memory'){ note.hidden=false; note.querySelector('span').textContent='Not saved — this browser is blocking storage. Add it to the Home Screen from Safari.' }
-  else if(Store.items.size>=5 && Date.now()-lastB>30*864e5){ note.hidden=false; note.querySelector('span').innerHTML=`${lastB?'Last backup over a month ago':'No backup yet'} · <button type="button" class="link" data-act="backup" style="padding:0">Back up now</button>` }
-  else note.hidden=true;
+  renderSyncNote();
   $('#btn-add').hidden=!Store.canWrite;
   if(S.view==='wardrobe') renderWardrobe();
   else if(S.view==='dress') renderDressMe();
@@ -1486,7 +1635,10 @@ async function backupWardrobe(){
   try{
     const blobs={};
     for(const it of Store.items.values()){
-      if(it.img?.startsWith('l:') && !blobs[it.img]){ const r=await Store._get('blobs',it.img.slice(2)); if(r) blobs[it.img]=await blobToDataURL(r.blob) }
+      if(!it.img?.startsWith('l:') || blobs[it.img]) continue;
+      const key=it.img.slice(2); const r=await Store._get('blobs',key);
+      const blob=r?.blob || await Sync.fetchPhoto(key);
+      if(blob) blobs[it.img]=await blobToDataURL(blob);
     }
     const data={app:'atelier',version:1,exportedAt:new Date().toISOString(),items:[...Store.items.values()],outfits:[...Store.outfits.values()],days:[...Store.days.values()],images:blobs};
     const name=`atelier-backup-${todayKey()}.json`;
@@ -1498,26 +1650,25 @@ async function backupWardrobe(){
     } else {
       const a=document.createElement('a'); a.href=URL.createObjectURL(file); a.download=name; document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},4000);
     }
-    try{localStorage.setItem('atelier.backup',String(Date.now()))}catch(e){}
-    toast('Backup ready — save it to iCloud Drive or Files',3600); render();
+    toast('Backup ready — save it to iCloud Drive or Files',3600);
   }catch(e){ t.remove(); toast('The backup could not be made. Try again.') }
 }
 async function restoreWardrobe(file){
   let data;
   try{ data=JSON.parse(await file.text()) }catch(e){ toast('That file is not an Atelier backup.'); return }
   if(data?.app!=='atelier'||!Array.isArray(data.items)){ toast('That file is not an Atelier backup.'); return }
-  if(!await confirmBox(`Restore ${data.items.length} pieces and ${(data.outfits||[]).length} outfits from ${new Date(data.exportedAt).toLocaleDateString('en-GB')}? Pieces that are in both are replaced by the backup copy; everything else stays.`,'Restore')) return;
+  if(!await confirmBox(`Restore ${data.items.length} pieces and ${(data.outfits||[]).length} outfits from ${new Date(data.exportedAt).toLocaleDateString('en-GB')}? Pieces in both are replaced by the backup copy; everything else stays.`,'Restore')) return;
   const t=toast('Restoring…',0);
   try{
     for(const [ref,url] of Object.entries(data.images||{})){
       if(!ref.startsWith('l:')) continue;
-      const blob=await (await fetch(url)).blob();
-      await Store._put('blobs',{key:ref.slice(2),blob}); Store.urls.delete(ref);
+      const key=ref.slice(2), blob=await (await fetch(url)).blob();
+      await Store._put('blobs',{key,blob}); await Store.enqueue('blobs',key,'put'); Store.urls.delete(ref);
     }
-    for(const it of data.items){ await Store._put('items',it); Store.items.set(it.id,it) }
-    for(const o of data.outfits||[]){ await Store._put('outfits',o); Store.outfits.set(o.id,o) }
-    for(const d of data.days||[]){ await Store._put('days',d); Store.days.set(d.id,d) }
-    t.remove(); closeSheet(); render(); toast('Wardrobe restored');
+    for(const it of data.items) await Store._save('items',it);
+    for(const o of data.outfits||[]) await Store._save('outfits',o);
+    for(const d of data.days||[]) await Store._save('days',d);
+    t.remove(); closeSheet(); render(); toast('Wardrobe restored — syncing now');
   }catch(e){ t.remove(); toast('Restoring stopped partway. Try again with the same file.') }
 }
 $('#in-restore').onchange=e=>{const f=e.target.files[0]; e.target.value=''; if(f) restoreWardrobe(f)};
@@ -1525,18 +1676,22 @@ $('#in-restore').onchange=e=>{const f=e.target.files[0]; e.target.value=''; if(f
 /* ---------- settings ---------- */
 function openSettings(){
   const ex=Store.list().filter(i=>i.example);
-  const modeText={cloud:'Pieces and outfits are saved to this page, so they are there on any phone or computer that opens it.',
-    local:'Everything is saved on this iPhone only — nothing is sent anywhere. Back up now and then so nothing is lost if the phone is changed or reset.',
-    memory:'This browser is blocking storage, so nothing will be kept after you close the page.'}[Store.mode];
+  const ago=Store.lastSync?Math.round((Date.now()-Store.lastSync)/60000):null;
+  const syncText=Store.syncError?Store.syncError:Store.pending?`${Store.pending} ${Store.pending===1?'change':'changes'} waiting to sync`:ago===null?'Not synced yet on this device':ago<1?'Synced just now':`Synced ${ago} min ago`;
   const sheet=openSheet('Settings',`
-    <div class="field"><span class="label">Where things are saved</span><p style="margin:0">${esc(modeText)}</p></div>
-    <div class="field"><span class="label">Backup</span>
-      <div class="row"><button type="button" class="btn" id="s-backup" style="flex:1">Back up wardrobe</button><button type="button" class="btn ghost" id="s-restore" style="flex:1">Restore a backup</button></div>
-      <p class="note" style="margin:0">${(()=>{let t=0;try{t=+localStorage.getItem('atelier.backup')||0}catch(e){} return t?'Last backup: '+new Date(t).toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'}):'No backup yet.'})()} Save the file to iCloud Drive or Files.</p></div>
+    <div class="field"><span class="label">Account</span>
+      <p style="margin:0">Signed in as <b>${esc(Store.email||'—')}</b></p>
+      <p class="note" style="margin:0">${esc(syncText)}. Sign in with the same email on her iPad or another phone to see the same wardrobe.</p>
+      <div class="row"><button type="button" class="btn" id="s-sync" style="flex:1">Sync now</button><button type="button" class="btn ghost" id="s-out" style="flex:1">Sign out</button></div></div>
+    <div class="field"><span class="label">Change password</span>
+      <div class="row"><input type="password" id="s-pass" autocomplete="new-password" placeholder="New password (6+ characters)" style="flex:1;min-width:0;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--ground);padding:0 12px;font-size:16px"><button type="button" class="btn" id="s-pass-go">Save</button></div></div>
     <div class="field"><span class="label">Clean-up when adding photos</span>
       <div class="seg two-seg" id="s-cu" role="group" aria-label="Clean-up when adding photos"><button type="button" data-cu="auto" aria-pressed="${pref.cleanup!=='none'}">Automatic</button><button type="button" data-cu="none" aria-pressed="${pref.cleanup==='none'}">Keep original</button></div>
       <p class="note" style="margin:0">She can still switch for each photo. Wish list screenshots always start on Crop.</p></div>
-    ${navigator.standalone?'':`<div class="field"><span class="label">Add to the iPhone home screen</span><p style="margin:0">Open this page in Safari, tap the Share button, then “Add to Home Screen”. It then opens like an app — and keeps its own storage, so always use it from the icon.</p></div>`}
+    ${navigator.standalone?'':`<div class="field"><span class="label">Add to the Home Screen</span><p style="margin:0">Open this page in Safari, tap the Share button, then “Add to Home Screen”. It then opens like an app.</p></div>`}
+    <div class="field"><span class="label">Backup file</span>
+      <div class="row"><button type="button" class="btn ghost" id="s-backup" style="flex:1">Download a backup</button><button type="button" class="btn ghost" id="s-restore" style="flex:1">Restore a backup</button></div>
+      <p class="note" style="margin:0">Everything is already saved to her account. A backup file is an extra copy to keep in iCloud Drive or Files.</p></div>
     <div class="field"><span class="label">Photo tips</span><p style="margin:0">Lay each piece flat on a plain, contrasting surface in daylight and shoot from straight above. If the clean-up eats into a piece, lower the Clean-up slider.</p></div>
     ${ex.length&&Store.canWrite?`<button class="btn" id="s-ex">Remove the ${ex.length} example pieces</button>`:''}
     ${Store.canWrite&&!ex.length?`<button class="btn ghost" id="s-load">Load 8 example pieces</button>`:''}`);
@@ -1548,6 +1703,10 @@ function openSettings(){
     closeSheet(); toast('Examples removed');
   });
   $('#s-load',sheet)?.addEventListener('click',()=>{closeSheet(); loadExamples()});
+  $('#s-sync',sheet).onclick=async e=>{ e.target.disabled=true; e.target.textContent='Syncing…'; await Sync.run(); closeSheet(); toast(Store.syncError||'All synced') };
+  $('#s-out',sheet).onclick=()=>signOut();
+  $('#s-pass-go',sheet).onclick=async()=>{ const p=$('#s-pass',sheet).value; if(p.length<6){ toast('Choose a password with at least 6 characters.'); return }
+    const {error}=await Sync.sb.auth.updateUser({password:p}); toast(error?Auth.error(error):'Password changed'); if(!error) $('#s-pass',sheet).value='' };
   $('#s-backup',sheet).onclick=()=>{closeSheet(); backupWardrobe()};
   $('#s-restore',sheet).onclick=()=>$('#in-restore').click();
   $('#s-cu',sheet).onclick=e=>{const b=e.target.closest('[data-cu]'); if(!b) return; pref.cleanup=b.dataset.cu; $$('[data-cu]',sheet).forEach(x=>x.setAttribute('aria-pressed',x===b))};
@@ -1633,7 +1792,6 @@ function act(a){
   if(a==='library'){ S.addStatus='owned'; $('#in-library').click() }
   if(a==='wish'){ S.addStatus='wish'; $('#in-library').click() }
   if(a==='examples') loadExamples();
-  if(a==='backup') backupWardrobe();
   if(a==='clear'){S.cat='all';S.sub=null;S.q='';$('#q').value='';S.colours.clear();S.seasons.clear();S.occasions.clear();renderFilters();render()}
 }
 $('#main').addEventListener('click',e=>{
@@ -1668,11 +1826,23 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('.confirm'))
 
 $('#dm-seasons').innerHTML=[['','Any season'],...SEASONS].map(([v,l])=>`<button type="button" class="chip" data-dmseason="${v}">${l}</button>`).join('');
 let rsz; window.addEventListener('resize',()=>{ clearTimeout(rsz); rsz=setTimeout(()=>{ if(S.view==='dress'){ DM.sig=''; renderDressMe() } },150) });
+$('#auth-form').addEventListener('submit',e=>Auth.submit(e));
+$('#auth-switch').onclick=()=>{ Auth.mode=Auth.mode==='signup'?'signin':'signup'; Auth.paint(); $('#auth-msg').hidden=true };
+document.addEventListener('visibilitychange',()=>{ if(!document.hidden) Sync.soon(300) });
+window.addEventListener('online',()=>Sync.soon(300));
+setInterval(()=>{ if(!document.hidden) Sync.run() },60000);
 (async()=>{
   renderFilters();
-  await Store.init();
-  render();
   if('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+  let last=null; try{ last=JSON.parse(localStorage.getItem('atelier.lastUser')||'null') }catch(e){}
+  if(window.supabase?.createClient){
+    Sync.sb=supabase.createClient(SB_URL,SB_KEY,{auth:{persistSession:true,autoRefreshToken:true,storageKey:'atelier-auth'}});
+    let session=null;
+    try{ session=(await Sync.sb.auth.getSession()).data.session }catch(e){}
+    if(session){ await enterApp(session.user); return }
+  }
+  if(last && !navigator.onLine){ await Store.start(last.id,last.email); render(); renderSyncNote(); return }
+  $('#loading').hidden=true; Auth.show();
 })();
 </script>
 </body>
