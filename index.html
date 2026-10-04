@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Atelier</title>
+<title>VL Atelier</title>
 <meta name="description" content="A private wardrobe: catalogue pieces, build outfits, plan what to wear.">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Atelier">
+<meta name="apple-mobile-web-app-title" content="VL Atelier">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#EDECF0" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#17131A" media="(prefers-color-scheme: dark)">
@@ -40,6 +40,14 @@
   --danger:#F08A80; color-scheme:dark}
 
 html,body{height:100%}
+html{touch-action:manipulation}
+.stage.drawing{touch-action:none;overflow:hidden}
+.stage.tall.drawing{height:60vh}
+.stage.drawing canvas{transition:none;will-change:transform}
+.zoomrow{display:flex;align-items:center;justify-content:center;gap:10px}
+.zoomrow .btn{height:38px;min-width:44px;padding:0 12px;font-size:18px}
+.zoomrow .btn.ghost{font-size:14px}
+.zoomrow span{min-width:52px;text-align:center;font-variant-numeric:tabular-nums;font-size:13px;color:var(--muted)}
 body{background:var(--ground);color:var(--ink);font:15px/1.45 var(--body);-webkit-font-smoothing:antialiased;overflow:hidden}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -99,7 +107,7 @@ main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px 24px
 .catlist{display:grid;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
 .catrow{display:flex;align-items:center;gap:12px;padding:8px 12px;background:none;border:0;text-align:left;min-width:0}
 .catrow+.catrow{border-top:1px solid var(--line)}
-.catrow .cthumb{width:44px;height:52px;border-radius:8px;background:var(--tile);display:grid;place-items:center;flex:none;border:1px solid var(--line)}
+.catrow .cthumb{width:44px;height:52px;border-radius:8px;background:var(--ground);display:grid;place-items:center;flex:none;border:1px solid var(--line)}
 .catrow .cthumb img{max-width:84%;max-height:84%;object-fit:contain}
 .catrow b{font-weight:500;font-size:15px;display:block}
 .catrow small{color:var(--muted);font-size:12px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -242,6 +250,16 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 .sname{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:14px}
 .sval{font-variant-numeric:tabular-nums;font-weight:600;font-size:14px}
 .sval small{font-weight:400;color:var(--muted);font-size:11px}
+.gridbar{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:13px;color:var(--muted);min-height:36px}
+.gridbar .link{padding:6px 2px}
+.gridbar span{flex:1}
+.gridbar.sel{position:sticky;top:0;z-index:3;background:var(--ground);color:var(--ink);font-weight:500}
+.gridbar.sel span{text-align:center}
+.gridbar .btn{height:36px;padding:0 14px;font-size:13px}
+.card .tick{position:absolute;right:8px;bottom:8px;width:26px;height:26px;border-radius:50%;border:2px solid var(--line);background:var(--surface);display:grid;place-items:center;color:transparent}
+.card .tick svg{width:15px;height:15px}
+.card.picked .tick{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.card.picked .pic{outline:2px solid var(--accent);outline-offset:-2px}
 .auth{position:fixed;inset:0;z-index:50;background:var(--ground);display:grid;place-items:center;padding:calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));overflow-y:auto}
 .auth-card{width:100%;max-width:380px;display:grid;gap:14px}
 .auth-brand{font:500 40px/1 var(--display);margin-bottom:4px}
@@ -306,7 +324,7 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 <div class="app">
   <header class="top">
     <div>
-      <h1 class="brand">The <em>Atelier</em></h1>
+      <h1 class="brand">VL <em>Atelier</em></h1>
       <div class="tagline" id="tagline">Wardrobe</div>
     </div>
     <button class="icon-btn" id="btn-settings" aria-label="Settings">
@@ -396,7 +414,7 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
 <div id="layer"></div>
 <div class="auth" id="auth" hidden>
   <form class="auth-card" id="auth-form" novalidate>
-    <div class="auth-brand">The <em>Atelier</em></div>
+    <div class="auth-brand">VL <em>Atelier</em></div>
     <h2 id="auth-title">Welcome back</h2>
     <div class="field"><label class="label" for="auth-email">Email</label><input id="auth-email" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" required></div>
     <div class="field"><label class="label" for="auth-pass">Password</label><input id="auth-pass" type="password" autocomplete="current-password" required minlength="6"></div>
@@ -405,6 +423,16 @@ main.fixed{overflow:hidden;display:flex;flex-direction:column}
     <button class="btn primary" id="auth-go" type="submit">Sign in</button>
     <button class="link" id="auth-switch" type="button"></button>
   </form>
+</div>
+<div class="auth" id="lock" hidden>
+  <div class="auth-card" style="text-align:center;justify-items:center">
+    <div class="auth-brand">VL <em>Atelier</em></div>
+    <svg viewBox="0 0 48 48" fill="none" stroke="var(--accent)" stroke-width="2.2" stroke-linecap="round" style="width:64px;height:64px;margin:8px 0"><path d="M6 15V10a4 4 0 0 1 4-4h5M33 6h5a4 4 0 0 1 4 4v5M42 33v5a4 4 0 0 1-4 4h-5M15 42h-5a4 4 0 0 1-4-4v-5M17 17v3M31 17v3M24 18v9h-2M18 32c3.5 3 8.5 3 12 0"/></svg>
+    <h2 style="margin:0">Locked</h2>
+    <p class="auth-msg" id="lock-msg" role="alert" hidden></p>
+    <button class="btn primary" id="lock-go" type="button" style="width:100%">Unlock with Face ID</button>
+    <button class="link" id="lock-pass" type="button" style="color:var(--muted);font-weight:400">Use password instead</button>
+  </div>
 </div>
 
 <script src="vendor/supabase.js"></script>
@@ -642,16 +670,17 @@ const Auth = {
       if(res.error) throw res.error;
       if(!res.data.session){ throw new Error('Email not confirmed') }
       $('#auth-pass').value='';
-      await enterApp(res.data.session.user);
+      await enterApp(res.data.session.user,{skipLock:true});
     }catch(err){ msg.hidden=false; msg.textContent=this.error(err) }
     btn.disabled=false;
   },
 };
-async function enterApp(user){
+async function enterApp(user,opts={}){
   try{ localStorage.setItem('atelier.lastUser',JSON.stringify({id:user.id,email:user.email})) }catch(e){}
   Store.urls.clear();
   await Store.start(user.id,user.email);
   Auth.hide(); render(); renderSyncNote();
+  if(Lock.cred && !opts.skipLock) Lock.show(true);
   await offerDeviceImport();
   Sync.run();
 }
@@ -682,6 +711,54 @@ async function signOut(){
   try{ await Sync.sb?.auth.signOut() }catch(e){}
   location.reload();
 }
+
+/* ---------- Face ID / Touch ID lock (a passkey kept on this device) ---------- */
+const b64u={
+  enc:buf=>btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''),
+  dec:str=>{const s=atob(str.replace(/-/g,'+').replace(/_/g,'/')+'==='.slice((str.length+3)%4)); return Uint8Array.from(s,c=>c.charCodeAt(0))}
+};
+const Lock={
+  ok:false, hiddenAt:0, busy:false,
+  key(){return 'atelier.lock.'+Store.uid},
+  get cred(){ try{ return Store.uid?localStorage.getItem(this.key()):null }catch(e){ return null } },
+  async check(){ try{ this.ok=!!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()) }catch(e){ this.ok=false } return this.ok },
+  async enable(){
+    const cred=await navigator.credentials.create({publicKey:{
+      rp:{name:'VL Atelier',id:location.hostname},
+      user:{id:crypto.getRandomValues(new Uint8Array(16)),name:Store.email||'VL Atelier',displayName:Store.email||'VL Atelier'},
+      challenge:crypto.getRandomValues(new Uint8Array(32)),
+      pubKeyCredParams:[{type:'public-key',alg:-7},{type:'public-key',alg:-257}],
+      authenticatorSelection:{authenticatorAttachment:'platform',userVerification:'required',residentKey:'preferred'},
+      timeout:60000, attestation:'none'}});
+    if(!cred) throw new Error('No credential');
+    localStorage.setItem(this.key(), b64u.enc(cred.rawId));
+  },
+  disable(){ try{ localStorage.removeItem(this.key()) }catch(e){} },
+  show(auto){
+    $('#lock').hidden=false; $('.app').setAttribute('aria-hidden','true'); $('#lock-msg').hidden=true;
+    if(auto) setTimeout(()=>this.unlock(true),250);
+  },
+  hide(){ $('#lock').hidden=true; $('.app').removeAttribute('aria-hidden') },
+  async unlock(auto){
+    const id=this.cred; if(!id){ this.hide(); return }
+    if(this.busy) return; this.busy=true;
+    try{
+      const ok=await navigator.credentials.get({publicKey:{challenge:crypto.getRandomValues(new Uint8Array(32)),rpId:location.hostname,
+        allowCredentials:[{type:'public-key',id:b64u.dec(id),transports:['internal']}],userVerification:'required',timeout:60000}});
+      if(ok) this.hide();
+    }catch(e){
+      if(!auto){ $('#lock-msg').hidden=false; $('#lock-msg').textContent='Face ID didn’t unlock it. Try again, or use your password.' }
+    }
+    this.busy=false;
+  },
+  usePassword(){
+    this.hide(); Auth.mode='signin'; Auth.show(); $('#auth-email').value=Store.email||''; setTimeout(()=>$('#auth-pass').focus(),60);
+  },
+};
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){ Lock.hiddenAt=Date.now(); return }
+  if(Lock.cred && Lock.hiddenAt && Date.now()-Lock.hiddenAt>60000 && $('#auth').hidden) Lock.show(true);
+});
 
 /* ---------- image tools ---------- */
 async function fileToCanvas(file,max){
@@ -833,7 +910,7 @@ const pressed=(root,attr)=>$$(`[data-${attr}][aria-pressed="true"]`,root).map(b=
 const itemLabel=it=>it.name||(it.sub||catById(it.cat)?.label||'Untitled piece');
 
 /* ---------- state ---------- */
-const S = {view:'wardrobe', list:'owned', addStatus:'owned', sort:'new', wear:new Map(), layout:(()=>{try{return localStorage.getItem('atelier.layout')||'grid2'}catch(e){return 'grid2'}})(), cat:'all', sub:null, q:'', colours:new Set(), seasons:new Set(), occasions:new Set(), sample:null, sampleImages:false};
+const S = {selecting:false, selected:new Set(), visibleIds:[], view:'wardrobe', list:'owned', addStatus:'owned', sort:'new', wear:new Map(), layout:(()=>{try{return localStorage.getItem('atelier.layout')||'grid2'}catch(e){return 'grid2'}})(), cat:'all', sub:null, q:'', colours:new Set(), seasons:new Set(), occasions:new Set(), sample:null, sampleImages:false};
 
 const isWish=i=>i?.status==='wish';
 const okBg=v=>/^#[0-9a-fA-F]{6}$/.test(v||'')?v:'';
@@ -891,13 +968,13 @@ function renderWardrobe(){
   if(!all.length && S.list==='wish'){
     body.innerHTML=`<div class="empty">
       <h2>Nothing on the wish list yet</h2>
-      <p>Spotted something on a shop’s website? Take a screenshot, add it here and crop it down to the piece. She can try it in outfits before buying.</p>
+      <p>Spotted something on a shop’s website? Take a screenshot, add it here and crop it down to the piece. Try it in outfits before buying.</p>
       <div class="stack">${Store.canWrite?`<button class="btn primary" data-act="wish">Add a screenshot</button>`:''}</div></div>`;
     return;
   }
   if(!all.length){
     body.innerHTML=`<div class="empty">
-      <h2>Her wardrobe starts with one piece</h2>
+      <h2>Your wardrobe starts with one piece</h2>
       <p>Lay a piece flat on a plain bed or floor and take a photo from above. The background is cleaned away automatically.</p>
       <div class="stack">
         ${Store.canWrite?`<button class="btn primary" data-act="camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Take a photo</button>
@@ -912,15 +989,20 @@ function renderWardrobe(){
   }
   if(S.layout==='cats' && S.cat==='all' && !q && !(S.colours.size+S.seasons.size+S.occasions.size)){
     const rows=CATS.map(c=>{const its=all.filter(i=>i.cat===c.id); const subs=c.subs.map(sb=>[sb,its.filter(i=>i.sub===sb).length]).filter(x=>x[1]);
-      return `<button type="button" class="catrow${its.length?'':' dim'}" data-cat="${c.id}"><span class="cthumb">${its[0]?`<img src="${esc(Store.imgUrl(its[0].img))}" alt="" loading="lazy">`:''}</span>
+      return `<button type="button" class="catrow${its.length?'':' dim'}" data-cat="${c.id}"><span class="cthumb"><img src="${catIcon(c.id)}" alt=""></span>
         <span class="ctext"><b>${esc(c.label)}</b><small>${its.length} ${its.length===1?'item':'items'}${subs.length?' · '+esc(subs.map(x=>`${x[0]} ${x[1]}`).join(', ')):''}</small></span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 6 6 6-6 6"/></svg></button>`}).join('');
-    body.innerHTML=`<div class="catlist">${counts['']?`<button type="button" class="catrow" data-cat=""><span class="cthumb"></span><span class="ctext"><b>To tag</b><small>${counts['']} waiting for a category</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 6 6 6-6 6"/></svg></button>`:''}${rows}</div>`;
+    body.innerHTML=`<div class="catlist">${counts['']?`<button type="button" class="catrow" data-cat=""><span class="cthumb"><svg viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.6" style="width:22px;height:22px"><path d="M3 12V4h8l10 10-8 8L3 12Z"/><circle cx="7.5" cy="8.5" r="1.4"/></svg></span><span class="ctext"><b>To tag</b><small>${counts['']} waiting for a category</small></span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m9 6 6 6-6 6"/></svg></button>`:''}${rows}</div>`;
     return;
   }
-  body.innerHTML=`<div class="grid${S.layout==='grid3'?' dense':''}">${list.map(i=>`<button class="card" data-item="${i.id}">
+  S.visibleIds=list.map(i=>i.id);
+  const selN=S.selected.size;
+  const bar=Store.canWrite?(S.selecting
+    ?`<div class="gridbar sel"><button type="button" class="link" data-act="sel-cancel">Cancel</button><span>${selN} selected</span><button type="button" class="link" data-act="sel-all">${selN===list.length?'Select none':'Select all'}</button><button type="button" class="btn danger" data-act="sel-delete" ${selN?'':'disabled'}>Delete</button></div>`
+    :`<div class="gridbar"><span>${list.length} ${list.length===1?'piece':'pieces'}</span><button type="button" class="link" data-act="sel-start">Select</button></div>`):'';
+  body.innerHTML=bar+`<div class="grid${S.layout==='grid3'?' dense':''}${S.selecting?' selecting':''}">${list.map(i=>`<button class="card${S.selected.has(i.id)?' picked':''}" data-item="${i.id}" ${S.selecting?`aria-pressed="${S.selected.has(i.id)}"`:''}>
       <div class="pic">${i.img?`<img src="${esc(Store.imgUrl(i.img))}" alt="" loading="lazy" decoding="async">`:''}
-        ${!i.cat?'<span class="badge todo">To tag</span>':i.example?'<span class="badge">Example</span>':''}${i.fav?'<span class="fav">♥</span>':''}</div>
+        ${!i.cat?'<span class="badge todo">To tag</span>':i.example?'<span class="badge">Example</span>':''}${i.fav?'<span class="fav">♥</span>':''}${S.selecting?'<span class="tick" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 12 4 4 8-8"/></svg></span>':''}</div>
       <div class="tag"><b>${esc(itemLabel(i))}</b><span>${esc(isWish(i)?[i.price,i.shop].filter(Boolean).join(' · '):[i.brand,i.cat?(i.sub||catById(i.cat)?.label):'Needs a category'].filter(Boolean).join(' · '))}</span></div>
     </button>`).join('')}</div>`;
 }
@@ -977,7 +1059,7 @@ function formHTML(it,thumb,suggest){
     ${thumb?`<div class="dhead"><div class="thumb"><img id="f-thumb" src="${esc(thumb)}" alt=""></div>${nameField}</div>`:nameField}
     ${suggest?`<button type="button" class="btn suggest" id="add-suggest">Suggest name and tags from the photo</button>`:''}
     <div class="field"><span class="label">Where it goes</span><div class="seg two-seg" id="f-status" role="group" aria-label="Where it goes">
-      <button type="button" data-st="owned" aria-pressed="${!isWish(it)}">In her wardrobe</button><button type="button" data-st="wish" aria-pressed="${isWish(it)}">Wish list</button></div></div>
+      <button type="button" data-st="owned" aria-pressed="${!isWish(it)}">In wardrobe</button><button type="button" data-st="wish" aria-pressed="${isWish(it)}">Wish list</button></div></div>
     <div class="two" id="f-wish">
       <div class="field"><label class="label" for="f-price">Price${isWish(it)?'':' paid'}</label><input id="f-price" value="${esc(it.price||'')}" placeholder="£49.99" autocomplete="off"></div>
       <div class="field"><label class="label" for="f-shop">Shop</label><input id="f-shop" value="${esc(it.shop||'')}" placeholder="e.g. Zara" autocomplete="off"></div>
@@ -1041,6 +1123,12 @@ async function openAdd(file,status){
       <div class="stage tall" id="add-stage"><span class="busy">Preparing photo…</span></div>
       <p class="hint-line" id="add-hint"></p>
       <div class="row" id="tol-row"><label class="label" for="add-tol">Clean-up</label><input type="range" id="add-tol" min="0" max="100" value="40"></div>
+      <div class="zoomrow" id="zoom-row" hidden>
+        <button type="button" class="btn" data-zoom="out" aria-label="Zoom out">−</button>
+        <span id="zoom-l">100%</span>
+        <button type="button" class="btn" data-zoom="in" aria-label="Zoom in">+</button>
+        <button type="button" class="btn ghost" data-zoom="fit">Fit</button>
+      </div>
       <div class="row" id="draw-row" hidden>
         <label class="toggle"><input type="checkbox" id="add-refine"> <span id="add-refine-l">Also clear background inside the line</span></label>
         <button class="link" id="add-redraw" type="button" style="margin-left:auto">Redo</button>
@@ -1060,8 +1148,9 @@ async function openAdd(file,status){
     stage.classList.add('drawing');
     stage.innerHTML=`<canvas id="draw-cv" aria-label="${m==='crop'?'Photo — drag a box around the piece':'Photo — trace around the piece'}"></canvas>`;
     const cv=$('#draw-cv',sheet); cv.width=Add.base.width; cv.height=Add.base.height;
-    const g=cv.getContext('2d'), lw=Math.max(3,cv.width/140);
+    const g=cv.getContext('2d'), lw0=Math.max(3,cv.width/140); let lw=lw0;
     const paint=()=>{
+      lw=lw0/(Add.view?.s||1);
       g.globalCompositeOperation='source-over'; g.drawImage(Add.base,0,0);
       if(m==='crop'){
         if(!Add.rect) return;
@@ -1081,23 +1170,64 @@ async function openAdd(file,status){
     };
     paint();
     const pos=e=>{const r=cv.getBoundingClientRect(); return [clamp((e.clientX-r.left)/r.width*cv.width,0,cv.width),clamp((e.clientY-r.top)/r.height*cv.height,0,cv.height)]};
-    let down=false;
-    cv.onpointerdown=e=>{down=true; const p=pos(e);
+    /* zoom & pan: two fingers pinch/move the photo, one finger draws */
+    const V=Add.view={s:1,tx:0,ty:0};
+    cv.style.transformOrigin='0 0';
+    const zl=$('#zoom-l',sheet);
+    const bound=()=>{ const w=cv.offsetWidth,h=cv.offsetHeight; if(V.s<=1.001){V.s=1;V.tx=0;V.ty=0;return}
+      V.tx=clamp(V.tx,w-w*V.s,0); V.ty=clamp(V.ty,h-h*V.s,0) };
+    const apply=()=>{ bound(); cv.style.transform=`translate(${V.tx}px,${V.ty}px) scale(${V.s})`; if(zl) zl.textContent=Math.round(V.s*100)+'%'; paint() };
+    const zoomBy=(f)=>{ const w=cv.offsetWidth,h=cv.offsetHeight, cx=w/2, cy=h/2, q={x:(cx-V.tx)/V.s,y:(cy-V.ty)/V.s};
+      V.s=clamp(V.s*f,1,8); V.tx=cx-V.s*q.x; V.ty=cy-V.s*q.y; apply() };
+    Add.zoom=zoomBy; Add.fit=()=>{V.s=1;apply()};
+    const basePos=()=>({x:cv.offsetLeft,y:cv.offsetTop});
+    const sp=e=>{const r=stage.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}};
+    const pts=new Map(); let gesture=null, pinch=null, before=null;
+    apply();
+    stage.onpointerdown=e=>{
+      if(!sheet.isConnected) return;
+      pts.set(e.pointerId,sp(e)); try{stage.setPointerCapture(e.pointerId)}catch(_){}
+      e.preventDefault();
+      if(pts.size>=2){
+        if(gesture==='draw'){ Add.pts=before.pts; Add.rect=before.rect; paint() }   // second finger: it was a pinch, not a stroke
+        const [a,b]=[...pts.values()], mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2}, B=basePos();
+        pinch={d:Math.hypot(a.x-b.x,a.y-b.y)||1, s0:V.s, q:{x:(mid.x-B.x-V.tx)/V.s, y:(mid.y-B.y-V.ty)/V.s}};
+        gesture='pinch'; return;
+      }
+      if(gesture==='pinch') return;
+      before={pts:Add.pts, rect:Add.rect};
+      gesture='draw'; const p=pos(e);
       if(m==='crop') Add.rect=[p[0],p[1],p[0],p[1]]; else Add.pts=[p];
-      try{cv.setPointerCapture(e.pointerId)}catch(_){} paint(); e.preventDefault()};
-    cv.onpointermove=e=>{ if(!down) return; const p=pos(e);
+      paint();
+    };
+    stage.onpointermove=e=>{
+      if(!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId,sp(e));
+      if(gesture==='pinch'){
+        if(pts.size<2) return;
+        const [a,b]=[...pts.values()], mid={x:(a.x+b.x)/2,y:(a.y+b.y)/2}, B=basePos();
+        V.s=clamp(pinch.s0*Math.hypot(a.x-b.x,a.y-b.y)/pinch.d,1,8);
+        V.tx=mid.x-B.x-V.s*pinch.q.x; V.ty=mid.y-B.y-V.s*pinch.q.y; apply(); return;
+      }
+      if(gesture!=='draw') return;
+      const p=pos(e);
       if(m==='crop'){ Add.rect[2]=p[0]; Add.rect[3]=p[1]; paint(); return }
       const l=Add.pts[Add.pts.length-1];
-      if(Math.hypot(p[0]-l[0],p[1]-l[1])>cv.width/250){Add.pts.push(p); paint()} };
-    const up=()=>{ if(!down) return; down=false;
+      if(Math.hypot(p[0]-l[0],p[1]-l[1])>cv.width/(250*V.s)){Add.pts.push(p); paint()}
+    };
+    const up=e=>{
+      pts.delete(e.pointerId);
+      if(gesture==='pinch'){ if(!pts.size) gesture=null; return }    // lifting one finger after a pinch never starts a stroke
+      if(gesture!=='draw') return; gesture=null;
       if(m==='crop'){
         const [x0,y0,x1,y1]=normRect(Add.rect);
-        if(x1-x0<cv.width*.06||y1-y0<cv.height*.04){ Add.rect=null; paint(); hint('Drag from one corner of the piece to the opposite corner.'); return }
+        if(x1-x0<cv.width*.03||y1-y0<cv.height*.02){ Add.rect=before.rect||null; paint(); hint('Drag from one corner of the piece to the opposite corner. Pinch with two fingers to zoom.'); return }
         Add.done.crop=true; run(); return;
       }
-      if(Add.pts.length<12){ Add.pts=[]; paint(); hint('Keep your finger down and trace all the way round the piece.'); return }
-      Add.done.draw=true; run(); };
-    cv.onpointerup=up; cv.onpointercancel=up;
+      if(Add.pts.length<12){ Add.pts=[]; paint(); hint('Keep your finger down and trace all the way round the piece. Pinch with two fingers to zoom.'); return }
+      Add.done.draw=true; run();
+    };
+    stage.onpointerup=up; stage.onpointercancel=up;
   };
 
   const run=async()=>{
@@ -1106,9 +1236,11 @@ async function openAdd(file,status){
     $$('[data-m]',sheet).forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===m));
     const shaped=m==='draw'||m==='crop', ready=shaped&&Add.done[m];
     $('#draw-row',sheet).hidden=!ready;
+    $('#zoom-row',sheet).hidden=!(shaped&&!ready);
+    if(!(shaped&&!ready)){ stage.onpointerdown=stage.onpointermove=stage.onpointerup=stage.onpointercancel=null }
     $('#add-refine-l',sheet).textContent=m==='crop'?'Also clear the background':'Also clear background inside the line';
     $('#tol-row',sheet).hidden=!(m==='auto'||(ready&&refine));
-    if(shaped&&!ready){ next.disabled=true; showDraw(m); hint(m==='crop'?'Drag a box around the piece.':'Trace around the piece with your finger, then lift it.'); return }
+    if(shaped&&!ready){ next.disabled=true; showDraw(m); hint(m==='crop'?'Drag a box around the piece with one finger. Pinch with two fingers to zoom.':'Trace around the piece with one finger, then lift it. Pinch with two fingers to zoom.'); return }
     stage.classList.remove('drawing');
     let out=Add.base;
     if(m==='auto'){
@@ -1147,6 +1279,7 @@ async function openAdd(file,status){
     }
   };
 
+  $('#zoom-row',sheet).onclick=e=>{const z=e.target.closest('[data-zoom]')?.dataset.zoom; if(!z) return; if(z==='fit') Add.fit?.(); else Add.zoom?.(z==='in'?1.5:1/1.5)};
   $('#add-mode',sheet).onclick=e=>{const b=e.target.closest('[data-m]'); if(!b) return; Add.mode=b.dataset.m; run()};
   $('#add-tol',sheet).oninput=()=>{clearTimeout(Add.timer);Add.timer=setTimeout(run,180)};
   $('#add-refine',sheet).onchange=run;
@@ -1210,9 +1343,22 @@ async function addBatch(files,status){
   toast(failed?`${n-failed} added, ${failed} could not be read`:`${n} pieces added — tap each to tag it`,3600);
 }
 
+async function deleteSelected(){
+  const ids=[...S.selected]; if(!ids.length) return;
+  if(!await confirmBox(`Delete ${ids.length} ${ids.length===1?'piece':'pieces'}? They will also disappear from any outfits.`)) return;
+  const t=toast(`Deleting ${ids.length}…`,0); let failed=0;
+  for(const id of ids){ try{ await Store.delItem(id) }catch(e){ failed++ } }
+  t.remove(); S.selecting=false; S.selected.clear(); render();
+  toast(failed?`${ids.length-failed} deleted, ${failed} could not be deleted`:`${ids.length} ${ids.length===1?'piece':'pieces'} deleted`);
+}
 function openEdit(it){
   const sheet=openSheet(it.cat?'Edit piece':'Tag this piece',formHTML(it,Store.imgUrl(it.img),!it.cat&&S.sampleImages),
     `<button class="btn ghost" data-close2>Cancel</button><button class="btn primary" id="edit-save">Save changes</button>`);
+  $('.sheet-body',sheet).insertAdjacentHTML('beforeend','<button type="button" class="btn danger ghost" id="edit-del">Delete this piece</button>');
+  $('#edit-del',sheet).onclick=async()=>{
+    if(!await confirmBox(`Delete “${itemLabel(it)}”? It will also disappear from any outfits.`)) return;
+    try{ await Store.delItem(it.id); closeSheet(); toast('Piece deleted') }catch(e){ toast('The piece was not deleted. Try again.') }
+  };
   wireForm(sheet,it);
   $('#add-suggest',sheet)?.addEventListener('click',()=>suggestTags(sheet,()=>fetch(Store.imgUrl(it.img)).then(r=>r.blob())));
   $('[data-close2]',sheet).onclick=closeSheet;
@@ -1250,7 +1396,7 @@ function openItem(id){
     !Store.canWrite?'':isWish(it)?`<button class="btn" id="it-edit">Edit</button><button class="btn primary" id="it-bought">Bought it</button>`:`<button class="btn" id="it-edit">Edit</button><button class="btn primary" id="it-style">Style it</button>`);
   $('#it-wore',sheet)?.addEventListener('click',()=>{ closeSheet(); woreToday(it.id) });
   $('#it-bought',sheet)?.addEventListener('click',async()=>{
-    try{ await Store.putItem({...it,status:'',boughtAt:Date.now()}); closeSheet(); toast('Moved to her wardrobe') }catch(e){ toast(saveError(e)) }
+    try{ await Store.putItem({...it,status:'',boughtAt:Date.now()}); closeSheet(); toast('Moved to your wardrobe') }catch(e){ toast(saveError(e)) }
   });
   $('#it-edit',sheet)?.addEventListener('click',()=>openEdit(it));
   $('#it-style',sheet)?.addEventListener('click',()=>{closeSheet(); Builder.start(null,[it.id])});
@@ -1599,7 +1745,7 @@ function statsHTML(){
   const cpw=owned.map(i=>({i,p:priceNum(i.price),c:W.get(i.id)?.count||0})).filter(x=>x.p!=null&&x.c>0).sort((a,b)=>a.p/a.c-b.p/b.c).slice(0,3);
   const row=(i,right)=>`<button type="button" class="srow" data-item="${i.id}"><span class="sthumb"><img src="${esc(Store.imgUrl(i.img))}" alt="" loading="lazy"></span><span class="sname">${esc(itemLabel(i))}</span><span class="sval">${right}</span></button>`;
   return `<section class="stats">
-    <h3>Her wardrobe in numbers</h3>
+    <h3>Your wardrobe in numbers</h3>
     <div class="tiles">
       <div class="tile"><b>${monthWorn}</b><span>days logged in ${esc(keyDate(pre+'-01').toLocaleDateString('en-GB',{month:'long'}))}</span></div>
       <div class="tile"><b>${owned.length?Math.round(wornAny/owned.length*100):0}%</b><span>of pieces worn at least once</span></div>
@@ -1608,8 +1754,8 @@ function statsHTML(){
     </div>
     ${logged?`
       <div class="slist"><div class="label">Most worn</div>${most.map(i=>row(i,`${W.get(i.id).count}×`)).join('')||'<p class="note">Nothing logged yet.</p>'}</div>
-      <div class="slist"><div class="label">Best cost per wear</div>${cpw.map(x=>row(x.i,`${money(x.p/x.c)}<small>/wear</small>`)).join('')||'<p class="note">Add the price she paid to a piece to see this.</p>'}</div>`
-    :`<p class="note">Log what she wears — tap a day, or “Wore it today” on any piece or outfit — and this fills up with her most-worn pieces and cost per wear.</p>`}
+      <div class="slist"><div class="label">Best cost per wear</div>${cpw.map(x=>row(x.i,`${money(x.p/x.c)}<small>/wear</small>`)).join('')||'<p class="note">Add the price paid to a piece to see this.</p>'}</div>`
+    :`<p class="note">Log what you wear — tap a day, or “Wore it today” on any piece or outfit — and this fills up with your most-worn pieces and cost per wear.</p>`}
   </section>`;
 }
 function openDay(key){
@@ -1684,17 +1830,20 @@ function openSettings(){
   const sheet=openSheet('Settings',`
     <div class="field"><span class="label">Account</span>
       <p style="margin:0">Signed in as <b>${esc(Store.email||'—')}</b></p>
-      <p class="note" style="margin:0">${esc(syncText)}. Sign in with the same email on her iPad or another phone to see the same wardrobe.</p>
+      <p class="note" style="margin:0">${esc(syncText)}. Sign in with the same email on an iPad or another phone to see the same wardrobe.</p>
       <div class="row"><button type="button" class="btn" id="s-sync" style="flex:1">Sync now</button><button type="button" class="btn ghost" id="s-out" style="flex:1">Sign out</button></div></div>
+    ${Lock.ok?`<div class="field"><span class="label">Face ID</span>
+      <div class="row"><p style="margin:0;flex:1">${Lock.cred?'On — the app asks for Face ID when you open it.':'Off — the app opens straight away.'}</p><button type="button" class="btn" id="s-lock">${Lock.cred?'Turn off':'Turn on'}</button></div>
+      <p class="note" style="margin:0">Works on this device only. Turn it on separately on each phone or iPad.</p></div>`:''}
     <div class="field"><span class="label">Change password</span>
       <div class="row"><input type="password" id="s-pass" autocomplete="new-password" placeholder="New password (6+ characters)" style="flex:1;min-width:0;height:44px;border-radius:12px;border:1px solid var(--line);background:var(--ground);padding:0 12px;font-size:16px"><button type="button" class="btn" id="s-pass-go">Save</button></div></div>
     <div class="field"><span class="label">Clean-up when adding photos</span>
       <div class="seg two-seg" id="s-cu" role="group" aria-label="Clean-up when adding photos"><button type="button" data-cu="auto" aria-pressed="${pref.cleanup!=='none'}">Automatic</button><button type="button" data-cu="none" aria-pressed="${pref.cleanup==='none'}">Keep original</button></div>
-      <p class="note" style="margin:0">She can still switch for each photo. Wish list screenshots always start on Crop.</p></div>
+      <p class="note" style="margin:0">You can still switch for each photo. Wish list screenshots always start on Crop.</p></div>
     ${navigator.standalone?'':`<div class="field"><span class="label">Add to the Home Screen</span><p style="margin:0">Open this page in Safari, tap the Share button, then “Add to Home Screen”. It then opens like an app.</p></div>`}
     <div class="field"><span class="label">Backup file</span>
       <div class="row"><button type="button" class="btn ghost" id="s-backup" style="flex:1">Download a backup</button><button type="button" class="btn ghost" id="s-restore" style="flex:1">Restore a backup</button></div>
-      <p class="note" style="margin:0">Everything is already saved to her account. A backup file is an extra copy to keep in iCloud Drive or Files.</p></div>
+      <p class="note" style="margin:0">Everything is already saved to your account. A backup file is an extra copy to keep in iCloud Drive or Files.</p></div>
     <div class="field"><span class="label">Photo tips</span><p style="margin:0">Lay each piece flat on a plain, contrasting surface in daylight and shoot from straight above. If the clean-up eats into a piece, lower the Clean-up slider.</p></div>
     ${ex.length&&Store.canWrite?`<button class="btn" id="s-ex">Remove the ${ex.length} example pieces</button>`:''}
     ${Store.canWrite&&!ex.length?`<button class="btn ghost" id="s-load">Load 8 example pieces</button>`:''}`);
@@ -1708,6 +1857,10 @@ function openSettings(){
   $('#s-load',sheet)?.addEventListener('click',()=>{closeSheet(); loadExamples()});
   $('#s-sync',sheet).onclick=async e=>{ e.target.disabled=true; e.target.textContent='Syncing…'; await Sync.run(); closeSheet(); toast(Store.syncError||'All synced') };
   $('#s-out',sheet).onclick=()=>signOut();
+  $('#s-lock',sheet)?.addEventListener('click',async e=>{
+    if(Lock.cred){ Lock.disable(); closeSheet(); toast('Face ID lock turned off'); return }
+    try{ await Lock.enable(); closeSheet(); toast('Face ID lock is on') }catch(err){ toast(err?.name==='NotAllowedError'?'Face ID was cancelled — the lock is still off':'Face ID couldn’t be set up on this device') }
+  });
   $('#s-pass-go',sheet).onclick=async()=>{ const p=$('#s-pass',sheet).value; if(p.length<6){ toast('Choose a password with at least 6 characters.'); return }
     const {error}=await Sync.sb.auth.updateUser({password:p}); toast(error?Auth.error(error):'Password changed'); if(!error) $('#s-pass',sheet).value='' };
   $('#s-backup',sheet).onclick=()=>{closeSheet(); backupWardrobe()};
@@ -1753,11 +1906,36 @@ function drawExample(kind){
     shape('#C79A63','#8A6236',()=>{g.moveTo(130,250);g.lineTo(470,250);g.quadraticCurveTo(500,250,495,290);g.lineTo(470,470);g.quadraticCurveTo(465,500,430,500);g.lineTo(170,500);g.quadraticCurveTo(135,500,130,470);g.lineTo(105,290);g.quadraticCurveTo(100,250,130,250)});
     g.fillStyle='#E3C27A'; g.fillRect(280,300,40,26);
   }
+  if(kind==='hat'){
+    shape('#D9C6A5','#B39A72',()=>{g.ellipse(300,380,240,70,0,0,Math.PI*2)});
+    shape('#E3D2B3','#B39A72',()=>{g.moveTo(185,380);g.bezierCurveTo(185,200,415,200,415,380)});
+    g.save(); g.beginPath(); g.moveTo(185,380); g.bezierCurveTo(185,200,415,200,415,380); g.closePath(); g.clip(); g.fillStyle='#6B4430'; g.fillRect(150,330,300,28); g.restore();
+  }
+  if(kind==='swimsuit'){
+    shape('#E07B6A','#B85A4A',()=>{g.moveTo(220,70);g.lineTo(252,70);g.quadraticCurveTo(300,190,348,70);g.lineTo(380,70);g.lineTo(392,270);g.quadraticCurveTo(400,400,440,480);g.quadraticCurveTo(300,450,300,520);g.quadraticCurveTo(300,450,160,480);g.quadraticCurveTo(200,400,208,270)});
+  }
+  if(kind==='leggings'){
+    shape('#2E2B33','#151318',()=>{g.moveTo(215,60);g.lineTo(385,60);g.lineTo(400,560);g.lineTo(325,560);g.lineTo(300,230);g.lineTo(275,560);g.lineTo(200,560)});
+    g.fillStyle='#4A4652'; g.fillRect(215,60,170,26);
+  }
+  if(kind==='robe'){
+    shape('#EAD3D6','#C9A8AE',()=>{g.moveTo(230,50);g.lineTo(370,50);g.lineTo(470,120);g.lineTo(520,330);g.lineTo(460,340);g.lineTo(430,220);g.lineTo(445,570);g.lineTo(155,570);g.lineTo(170,220);g.lineTo(140,340);g.lineTo(80,330);g.lineTo(130,120)});
+    g.strokeStyle='#C9A8AE'; g.lineWidth=3; g.beginPath(); g.moveTo(230,50); g.lineTo(300,300); g.lineTo(370,50); g.moveTo(300,300); g.lineTo(330,570); g.stroke();
+    g.fillStyle='#C9A8AE'; g.fillRect(168,300,264,22);
+  }
   if(kind==='hoops'){
     g.strokeStyle='#C9A44C'; g.lineWidth=16; [[200,300],[400,300]].forEach(([x,y])=>{g.beginPath();g.arc(x,y,85,0,7);g.stroke()});
     g.strokeStyle='#F2DC9A'; g.lineWidth=4; [[200,300],[400,300]].forEach(([x,y])=>{g.beginPath();g.arc(x,y,85,3.6,4.6);g.stroke()});
   }
   return cropToAlpha(c);
+}
+const CAT_ICON={tops:'tee',bottoms:'jeans',dresses:'dress',outerwear:'coat',shoes:'sneaker',bags:'bag',accessories:'hat',jewellery:'hoops',swim:'swimsuit',active:'leggings',lounge:'robe'};
+const catIconCache={};
+function catIcon(cat){
+  if(catIconCache[cat]) return catIconCache[cat];
+  const k=CAT_ICON[cat]; if(!k) return '';
+  try{ catIconCache[cat]=scaleCanvas(drawExample(k),160).toDataURL('image/png') }catch(e){ catIconCache[cat]='' }
+  return catIconCache[cat];
 }
 const EXAMPLES=[
   ['tee','Striped Breton tee','tops','T-shirts',['navy','white'],['spring','summer','autumn'],['everyday']],
@@ -1781,13 +1959,13 @@ async function loadExamples(){
 }
 
 /* ---------- wiring ---------- */
-$$('.tab').forEach(t=>t.onclick=()=>{S.view=t.dataset.view; render(); $('#main').scrollTop=0});
+$$('.tab').forEach(t=>t.onclick=()=>{S.selecting=false;S.selected.clear();S.view=t.dataset.view; render(); $('#main').scrollTop=0});
 $('#btn-add').onclick=()=>{
   const sheet=openSheet('Add pieces',`
     <button class="btn primary" data-act="camera"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Take a photo</button>
     <button class="btn" data-act="library">Choose from photos</button>
     <button class="btn" data-act="wish"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z"/></svg>Add to wish list from a screenshot</button>
-    <p class="note" style="margin:0">Choose one photo to tag it straight away, or pick several at once — they go into “To tag” so she can label them later.</p>`);
+    <p class="note" style="margin:0">Choose one photo to tag it straight away, or pick several at once — they go into “To tag” to label later.</p>`);
   sheet.addEventListener('click',e=>{const a=e.target.closest('[data-act]')?.dataset.act; if(a){closeSheet(); act(a)}});
 };
 function act(a){
@@ -1795,6 +1973,10 @@ function act(a){
   if(a==='library'){ S.addStatus='owned'; $('#in-library').click() }
   if(a==='wish'){ S.addStatus='wish'; $('#in-library').click() }
   if(a==='examples') loadExamples();
+  if(a==='sel-start'){ S.selecting=true; S.selected.clear(); renderWardrobe() }
+  if(a==='sel-cancel'){ S.selecting=false; S.selected.clear(); renderWardrobe() }
+  if(a==='sel-all'){ if(S.selected.size===S.visibleIds.length) S.selected.clear(); else S.visibleIds.forEach(id=>S.selected.add(id)); renderWardrobe() }
+  if(a==='sel-delete') deleteSelected();
   if(a==='clear'){S.cat='all';S.sub=null;S.q='';$('#q').value='';S.colours.clear();S.seasons.clear();S.occasions.clear();renderFilters();render()}
 }
 $('#main').addEventListener('click',e=>{
@@ -1811,7 +1993,9 @@ $('#main').addEventListener('click',e=>{
   const l=e.target.closest('[data-list]'); if(l){S.list=l.dataset.list;S.cat='all';S.sub=null;render();return}
   const c=e.target.closest('[data-cat]'); if(c){S.cat=c.dataset.cat;S.sub=null;render();return}
   const s=e.target.closest('[data-sub]'); if(s){S.sub=s.dataset.sub||null;render();return}
-  const it=e.target.closest('[data-item]'); if(it){openItem(it.dataset.item);return}
+  const it=e.target.closest('[data-item]');
+  if(it && S.selecting && it.closest('#wardrobe-body')){ const id=it.dataset.item; S.selected.has(id)?S.selected.delete(id):S.selected.add(id); renderWardrobe(); return }
+  if(it){openItem(it.dataset.item);return}
   const o=e.target.closest('[data-outfit]'); if(o){openOutfit(o.dataset.outfit);return}
   const fc=e.target.closest('[data-fc]'); if(fc){const v=fc.dataset.fc; S.colours.has(v)?S.colours.delete(v):S.colours.add(v); renderFilters(); render(); return}
   const fs=e.target.closest('[data-fs]'); if(fs){const v=fs.dataset.fs; S.seasons.has(v)?S.seasons.delete(v):S.seasons.add(v); renderFilters(); render(); return}
@@ -1830,6 +2014,9 @@ document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ if($('.confirm'))
 $('#dm-seasons').innerHTML=[['','Any season'],...SEASONS].map(([v,l])=>`<button type="button" class="chip" data-dmseason="${v}">${l}</button>`).join('');
 let rsz; window.addEventListener('resize',()=>{ clearTimeout(rsz); rsz=setTimeout(()=>{ if(S.view==='dress'){ DM.sig=''; renderDressMe() } },150) });
 $('#auth-form').addEventListener('submit',e=>Auth.submit(e));
+$('#lock-go').onclick=()=>Lock.unlock(false);
+$('#lock-pass').onclick=()=>Lock.usePassword();
+Lock.check();
 $('#auth-switch').onclick=()=>{ Auth.mode=Auth.mode==='signup'?'signin':'signup'; Auth.paint(); $('#auth-msg').hidden=true };
 document.addEventListener('visibilitychange',()=>{ if(!document.hidden) Sync.soon(300) });
 window.addEventListener('online',()=>Sync.soon(300));
