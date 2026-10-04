@@ -473,13 +473,15 @@ const Store = {
   _put(store,v){ if(!this.idb) return Promise.resolve(); return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').put(v);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
   _del(store,k){ if(!this.idb) return Promise.resolve(); return new Promise((res,rej)=>{const r=this._tx(store,'readwrite').delete(k);r.onsuccess=()=>res();r.onerror=()=>rej(r.error)})},
   _get(store,k){ if(!this.idb) return Promise.resolve(undefined); return new Promise((res,rej)=>{const r=this._tx(store,'readonly').get(k);r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)})},
+  async putBlob(key,blob){ const buf=await blob.arrayBuffer(); await this._put('blobs',{key,buf,type:blob.type||'image/png'}) },
+  async getBlob(key){ const r=await this._get('blobs',key); if(!r) return null; return r.blob || (r.buf ? new Blob([r.buf],{type:r.type||'image/png'}) : null) },
   async enqueue(coll,id,op){
     await this._put('outbox',{k:coll+':'+id,coll,id,op,at:Date.now()+Math.random()});
     this.pending=(await this._all('outbox')).length; Sync.soon();
   },
   async addImage(blob){
     const key=uid();
-    await this._put('blobs',{key,blob});
+    await this.putBlob(key,blob);
     this.urls.set('l:'+key, URL.createObjectURL(blob));
     await this.enqueue('blobs',key,'put');
     return 'l:'+key;
@@ -489,8 +491,7 @@ const Store = {
     if(this.urls.get(ref)) return this.urls.get(ref);
     if(ref.startsWith('l:') && !this.loadingImg.has(ref)){
       this.loadingImg.add(ref); const key=ref.slice(2);
-      this._get('blobs',key).then(async r=>{
-        let blob=r?.blob;
+      this.getBlob(key).then(async blob=>{
         if(!blob) blob=await Sync.fetchPhoto(key);
         if(blob){ this.urls.set(ref,URL.createObjectURL(blob)); this.onChange() }
       }).catch(()=>{}).finally(()=>this.loadingImg.delete(ref));
@@ -506,12 +507,13 @@ const Store = {
   async _save(coll,obj){
     const clean=JSON.parse(JSON.stringify({...obj,updatedAt:Date.now()}));
     await this._put(coll,clean); this[coll].set(clean.id,clean);
-    await this.enqueue(coll,clean.id,'put'); this.onChange();
+    await this.enqueue(coll,clean.id,'put'); this.changed();
   },
   async _remove(coll,id){
     await this._del(coll,id); this[coll].delete(id);
-    await this.enqueue(coll,id,'del'); this.onChange();
+    await this.enqueue(coll,id,'del'); this.changed();
   },
+  changed(){ try{ this.onChange() }catch(e){ console.error(e) } },
   putItem(it){return this._save('items',it)},
   async delItem(id){ const it=this.items.get(id); await this._remove('items',id); if(it) await this.dropImage(it.img) },
   putOutfit(o){return this._save('outfits',o)},
@@ -539,8 +541,8 @@ const Sync = {
       if(op.coll==='blobs'){
         const path=`${Store.uid}/${op.id}`;
         if(op.op==='put'){
-          const r=await Store._get('blobs',op.id);
-          if(r){ const {error}=await this.sb.storage.from('photos').upload(path,r.blob,{upsert:true,contentType:r.blob.type||'image/webp'}); if(error) throw error }
+          const blob=await Store.getBlob(op.id);
+          if(blob){ const {error}=await this.sb.storage.from('photos').upload(path,blob,{upsert:true,contentType:blob.type||'image/webp'}); if(error) throw error }
         } else await this.sb.storage.from('photos').remove([path]);
       } else {
         let row;
@@ -589,7 +591,7 @@ const Sync = {
     try{
       const {data,error}=await this.sb.storage.from('photos').download(`${Store.uid}/${key}`);
       if(error||!data) return null;
-      await Store._put('blobs',{key,blob:data});
+      await Store.putBlob(key,data);
       return data;
     }catch(e){ return null }
   },
@@ -667,7 +669,7 @@ async function offerDeviceImport(){
     if(!ok){ old.close(); return }
     const t=toast('Adding pieces to your account…',0);
     const [outfits,days,blobs]=await Promise.all([all('outfits'),all('days'),all('blobs')]);
-    for(const b of blobs){ await Store._put('blobs',b); await Store.enqueue('blobs',b.key,'put') }
+    for(const b of blobs){ const blob=b.blob||(b.buf&&new Blob([b.buf],{type:b.type})); if(blob){ await Store.putBlob(b.key,blob); await Store.enqueue('blobs',b.key,'put') } }
     for(const it of items){ await Store._save('items',it) }
     for(const o of outfits){ await Store._save('outfits',o) }
     for(const d of days){ await Store._save('days',d) }
@@ -1165,7 +1167,8 @@ function saveError(err){
   const c=err?.code;
   if(c==='quota_exceeded') return 'Storage is full. Remove some pieces, then try again.';
   if(c==='not_granted'||c==='not_writer'||c==='permission_denied') return 'This copy is view-only, so the piece was not saved.';
-  return 'The piece was not saved. Check the connection and try again.';
+  const why=[err?.name,err?.message].filter(Boolean).join(': ');
+  return 'The piece was not saved.'+(why?' ('+why.slice(0,120)+')':' Try again.');
 }
 async function suggestTags(sheet,getBlob){
   const btn=$('#add-suggest',sheet); if(!btn) return;
@@ -1636,8 +1639,8 @@ async function backupWardrobe(){
     const blobs={};
     for(const it of Store.items.values()){
       if(!it.img?.startsWith('l:') || blobs[it.img]) continue;
-      const key=it.img.slice(2); const r=await Store._get('blobs',key);
-      const blob=r?.blob || await Sync.fetchPhoto(key);
+      const key=it.img.slice(2);
+      const blob=await Store.getBlob(key) || await Sync.fetchPhoto(key);
       if(blob) blobs[it.img]=await blobToDataURL(blob);
     }
     const data={app:'atelier',version:1,exportedAt:new Date().toISOString(),items:[...Store.items.values()],outfits:[...Store.outfits.values()],days:[...Store.days.values()],images:blobs};
@@ -1663,7 +1666,7 @@ async function restoreWardrobe(file){
     for(const [ref,url] of Object.entries(data.images||{})){
       if(!ref.startsWith('l:')) continue;
       const key=ref.slice(2), blob=await (await fetch(url)).blob();
-      await Store._put('blobs',{key,blob}); await Store.enqueue('blobs',key,'put'); Store.urls.delete(ref);
+      await Store.putBlob(key,blob); await Store.enqueue('blobs',key,'put'); Store.urls.delete(ref);
     }
     for(const it of data.items) await Store._save('items',it);
     for(const o of data.outfits||[]) await Store._save('outfits',o);
